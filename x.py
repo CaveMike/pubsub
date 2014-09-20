@@ -203,6 +203,8 @@ class TestPublishment(unittest.TestCase):
         self.assertIsNotNone(repr(p))
 
 class xnode(object):
+    SEPARATOR = '.'
+
     def __init__(self, key, parent=None):
         self.key = key
         self.parent = parent
@@ -220,9 +222,22 @@ class xnode(object):
     def remove_child(self, child):
         del self.children[child.key]
 
+    def check_keys(keys):
+        if isinstance(keys, str):
+            return keys.split(xnode.SEPARATOR)
+        elif not hasattr(keys, '__iter__'):
+            raise TypeError('invalid keys')
+        elif not hasattr(keys, 'pop'):
+            # If keys is iter-able, but not pop-able, then convert it into a list.
+            return list(keys)
+
+        return keys
+
     def find_closest(self, keys):
         if not keys:
             return self, ()
+
+        keys = xnode.check_keys(keys)
 
         try:
             n = self
@@ -301,6 +316,24 @@ class TestXNode(unittest.TestCase):
         n.remove_child(c)
         self.assertEqual(0, len(n.children))
 
+    def test_check_keys_tuple(self):
+        keys = xnode.check_keys(('a', 'aa', 'aaa'))
+        self.assertTrue(isinstance(keys, list))
+
+    def test_check_keys_list(self):
+        keys = xnode.check_keys(['a', 'aa', 'aaa'])
+        self.assertTrue(isinstance(keys, list))
+
+    def test_check_keys_none(self):
+        self.assertRaises(TypeError, xnode.check_keys, None)
+
+    def test_check_keys_int(self):
+        self.assertRaises(TypeError, xnode.check_keys, 1)
+
+    def test_check_keys_string(self):
+        keys = xnode.check_keys('a.aa.aaa')
+        self.assertTrue(isinstance(keys, list))
+
     def test_up(self):
         l = self.abaa.up()
         self.assertEqual(5, len(l))
@@ -327,21 +360,23 @@ class TestXNode(unittest.TestCase):
         self.assertEqual(self.r, n)
         self.assertEqual(0, len(subkeys))
 
-#    def test_get_by_string(self):
-#        n = self.r.find_closest('a.ab.aba.abaa')
-#        self.assertEqual(self.abaa, n)
+    def test_get_by_string(self):
+        n, subkeys = self.r.find_closest('a.ab.aba.abaa')
+        self.assertEqual(self.abaa, n)
 
-#    def test_get_by_sequence(self):
-#        n = self.r.find_closest(('a', 'ab', 'aba', 'abaa'))
-#        self.assertEqual(self.abaa, n)
+    def test_get_by_sequence(self):
+        n, subkeys = self.r.find_closest(('a', 'ab', 'aba', 'abaa'))
+        self.assertEqual(self.abaa, n)
 
     def test_get_by_list(self):
         n, subkeys = self.r.find_closest(['a', 'ab', 'aba', 'abaa'])
         self.assertEqual(self.abaa, n)
         self.assertEqual(0, len(subkeys))
 
-#    def test_get_by_string_missing(self):
-#        self.assertRaises(KeyError, self.r.find_closest, 'a.ab.aba.abaa.abaaa')
+    def test_get_by_string_missing(self):
+        n, subkeys = self.r.find_closest('a.ab.aba.abaa.abaaa')
+        self.assertEqual(self.abaa, n)
+        self.assertEqual(1, len(subkeys))
 
     def test_str(self):
         self.assertIsNotNone(str(self.r))
@@ -350,31 +385,18 @@ class TestXNode(unittest.TestCase):
         self.assertIsNotNone(repr(self.r))
 
 class xnodes(object):
-    def __init__(self, separator='.'):
+    def __init__(self):
         self.root = node('<root>')
-        self.separator = separator
-
-    def check_keys(self, keys):
-        if isinstance(keys, str):
-            return keys.split(self.separator)
-        elif not hasattr(keys, '__iter__'):
-            raise TypeError('invalid keys')
-        elif not hasattr(keys, 'pop'):
-            # If keys is iter-able, but not pop-able, then convert it into a list.
-            return list(keys)
-
-        return keys
 
     def find_closest(self, keys):
-        keys = self.check_keys(keys)
         return self.root.find_closest(keys)
 
     def has_node(self, keys):
-        parent, subkeys = self.find_closest(keys)
+        parent, subkeys = self.root.find_closest(keys)
         return not len(subkeys)
 
     def get_node(self, keys):
-        parent, subkeys = self.find_closest(keys)
+        parent, subkeys = self.root.find_closest(keys)
         if not len(subkeys):
             return parent
 
@@ -384,13 +406,11 @@ class xnodes(object):
         if not keys:
             return self.root
 
-        keys = self.check_keys(keys)
-
         # Find the closest existing node.
-        n, subkeys = self.find_closest(keys)
+        n, subkeys = self.root.find_closest(keys)
 
         # Create new nodes.
-        for subkey in keys:
+        for subkey in subkeys:
             n = xnode(subkey, n)
 
         return n
@@ -407,24 +427,6 @@ class xnodes(object):
 class TestXNodes(unittest.TestCase):
     def setUp(self):
         self.x = xnodes()
-
-    def test_check_keys_tuple(self):
-        keys = self.x.check_keys(('a', 'aa', 'aaa'))
-        self.assertTrue(isinstance(keys, list))
-
-    def test_check_keys_list(self):
-        keys = self.x.check_keys(['a', 'aa', 'aaa'])
-        self.assertTrue(isinstance(keys, list))
-
-    def test_check_keys_none(self):
-        self.assertRaises(TypeError, self.x.check_keys, None)
-
-    def test_check_keys_int(self):
-        self.assertRaises(TypeError, self.x.check_keys, 1)
-
-    def test_check_keys_string(self):
-        keys = self.x.check_keys('a.aa.aaa')
-        self.assertTrue(isinstance(keys, list))
 
     def test_find_closest_empty(self):
         parent, subkeys = self.x.find_closest(['a', 'aa', 'aaa'])
