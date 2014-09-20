@@ -31,6 +31,302 @@ class TestIsSeqOrSet(unittest.TestCase):
     def test_set_strings(self):
         self.assertTrue(is_sequence_or_set(set(('test0', 'test1'))))
 
+class node(object):
+    SEPARATOR = '.'
+
+    def __init__(self, key, parent=None):
+        self.key = key
+        self.parent = parent
+        if self.parent:
+            self.parent.add_child(self)
+        self.children = {}
+        self.data = None
+
+    def delete(self):
+        if self.parent:
+            self.parent.remove_child(self)
+
+    def add_child(self, child):
+        self.children[child.key] = child
+
+    def remove_child(self, child):
+        del self.children[child.key]
+
+    def check_keys(keys):
+        if isinstance(keys, str):
+            return keys.split(node.SEPARATOR)
+        elif not hasattr(keys, '__iter__'):
+            raise TypeError('invalid keys')
+        elif not hasattr(keys, 'pop'):
+            # If keys is iter-able, but not pop-able, then convert it into a list.
+            return list(keys)
+
+        return keys
+
+    def find_closest(self, keys):
+        if not keys:
+            return self, ()
+
+        keys = node.check_keys(keys)
+
+        try:
+            s = self
+            while len(keys):
+                subkey = keys[0]
+                s = s.children[subkey]
+                keys.pop(0)
+        except KeyError:
+            pass
+
+        return s, keys
+
+    def ancestors(self):
+        if self.parent:
+            yield from self.parent.self_and_ancestors()
+
+    def self_and_ancestors(self):
+        yield self
+        yield from self.ancestors()
+
+    def descendents(self):
+        for key, child in self.children.items():
+            yield from child.prefix()
+
+    def prefix(self):
+        yield self
+        yield from self.descendents()
+
+    def postfix(self):
+        yield from self.descendents()
+        yield self
+
+    def __str__(self):
+        return 'key=' + str(self.key)
+
+    def __repr__(self):
+        return 'key=' + repr(self.key) + ', parent=' + repr(self.parent) + ', children=' + repr(self.children) + ', data=' + repr(self.data)
+
+class TestNode(unittest.TestCase):
+    def setUp(self):
+        self.r = node('r')
+        self.a = node('a', self.r)
+        self.aa = node('aa', self.a)
+        self.ab = node('ab', self.a)
+        self.aba = node('aba', self.ab)
+        self.abaa = node('abaa', self.aba)
+        self.ac = node('ac', self.a)
+        self.b = node('b', self.r)
+        self.c = node('c', self.r)
+        self.ca = node('ca', self.c)
+        self.cb = node('cb', self.c)
+
+    def test_init_none(self):
+        self.assertRaises(TypeError, node)
+
+    def test_init_key(self):
+        s = node('key')
+        self.assertEqual('key', s.key)
+        self.assertIsNone(s.parent)
+        self.assertEqual(0, len(s.children))
+
+    def test_init_add(self):
+        s = node('')
+        s.add_child(node(''))
+        self.assertEqual(1, len(s.children))
+
+    def test_init_remove(self):
+        s = node('')
+        c = node('')
+        s.add_child(c)
+        s.remove_child(c)
+        self.assertEqual(0, len(s.children))
+
+    def test_check_keys_tuple(self):
+        keys = node.check_keys(('a', 'aa', 'aaa'))
+        self.assertTrue(isinstance(keys, list))
+
+    def test_check_keys_list(self):
+        keys = node.check_keys(['a', 'aa', 'aaa'])
+        self.assertTrue(isinstance(keys, list))
+
+    def test_check_keys_none(self):
+        self.assertRaises(TypeError, node.check_keys, None)
+
+    def test_check_keys_int(self):
+        self.assertRaises(TypeError, node.check_keys, 1)
+
+    def test_check_keys_string(self):
+        keys = node.check_keys('a.aa.aaa')
+        self.assertTrue(isinstance(keys, list))
+
+    def test_get_by_none(self):
+        s, subkeys = self.r.find_closest(None)
+        self.assertEqual(self.r, s)
+        self.assertEqual(0, len(subkeys))
+
+    def test_get_by_empty(self):
+        s, subkeys = self.r.find_closest('')
+        self.assertEqual(self.r, s)
+        self.assertEqual(0, len(subkeys))
+
+    def test_get_by_string(self):
+        s, subkeys = self.r.find_closest('a.ab.aba.abaa')
+        self.assertEqual(self.abaa, s)
+
+    def test_get_by_sequence(self):
+        s, subkeys = self.r.find_closest(('a', 'ab', 'aba', 'abaa'))
+        self.assertEqual(self.abaa, s)
+
+    def test_get_by_list(self):
+        s, subkeys = self.r.find_closest(['a', 'ab', 'aba', 'abaa'])
+        self.assertEqual(self.abaa, s)
+        self.assertEqual(0, len(subkeys))
+
+    def test_get_by_string_missing(self):
+        s, subkeys = self.r.find_closest('a.ab.aba.abaa.abaaa')
+        self.assertEqual(self.abaa, s)
+        self.assertEqual(1, len(subkeys))
+
+    def test_str(self):
+        self.assertIsNotNone(str(self.r))
+
+    def test_repr(self):
+        self.assertIsNotNone(repr(self.r))
+
+    def test_ancestors_root(self):
+        l = [n for n in self.r.ancestors()]
+        self.assertEqual(0, len(l))
+
+    def test_ancestors_abaa(self):
+        l = [n for n in self.abaa.ancestors()]
+        self.assertEqual(4, len(l))
+
+    def test_self_ancestors_root(self):
+        l = [n for n in self.r.self_and_ancestors()]
+        self.assertEqual(1, len(l))
+
+    def test_self_ancestors_abaa(self):
+        l = [n for n in self.abaa.self_and_ancestors()]
+        self.assertEqual(5, len(l))
+
+    def test_descendents(self):
+        l = [n for n in self.r.descendents()]
+        self.assertEqual(10, len(l))
+
+    def test_prefix(self):
+        l = [n for n in self.r.prefix()]
+        self.assertEqual(11, len(l))
+        self.assertEqual(self.r, l[0])
+
+    def test_postfix(self):
+        l = [n for n in self.r.postfix()]
+        self.assertEqual(11, len(l))
+        self.assertEqual(self.r, l[-1])
+
+class root(object):
+    def __init__(self):
+        self.root = node('<root>')
+
+    def find_closest(self, keys):
+        return self.root.find_closest(keys)
+
+    def has_node(self, keys):
+        parent, subkeys = self.root.find_closest(keys)
+        return not len(subkeys)
+
+    def get_node(self, keys):
+        parent, subkeys = self.root.find_closest(keys)
+        if not len(subkeys):
+            return parent
+
+        return None
+
+    def create_node(self, keys):
+        if not keys:
+            return self.root
+
+        # Find the closest existing node.
+        s, subkeys = self.root.find_closest(keys)
+
+        # Create new nodes.
+        for subkey in subkeys:
+            s = node(subkey, s)
+
+        return s
+
+    def delete_node(self, keys):
+        s = self.get_node(keys)
+        if not s:
+            return None
+
+        s.delete()
+
+        return s
+
+class TestRoot(unittest.TestCase):
+    def setUp(self):
+        self.x = root()
+
+    def test_find_closest_empty(self):
+        parent, subkeys = self.x.find_closest(['a', 'aa', 'aaa'])
+        self.assertEqual(self.x.root, parent)
+        self.assertEqual(3, len(subkeys))
+
+    def test_create(self):
+        a = self.x.create_node(['a'])
+        self.assertEqual('a', a.key)
+        self.assertEqual(self.x.root, a.parent)
+
+        aa = self.x.create_node(['a', 'aa'])
+        self.assertEqual('aa', aa.key)
+        self.assertEqual(a, aa.parent)
+
+    def test_has_node(self):
+        # setup
+        a = self.x.create_node(['a'])
+        aa = self.x.create_node(['a', 'aa'])
+
+        self.assertTrue(self.x.has_node(['a']))
+        self.assertTrue(self.x.has_node(['a', 'aa']))
+        self.assertFalse(self.x.has_node(['a', 'aa', 'aaa']))
+
+    def test_has_node(self):
+        # setup
+        a = self.x.create_node(['a'])
+        aa = self.x.create_node(['a', 'aa'])
+
+        self.assertEqual(a, self.x.get_node(['a']))
+        self.assertEqual(aa, self.x.get_node(['a', 'aa']))
+        self.assertIsNone(self.x.get_node(['a', 'aa', 'aaa']))
+
+    def test_delete(self):
+        # setup
+        a = self.x.create_node(['a'])
+        aa = self.x.create_node(['a', 'aa'])
+
+        self.assertIsNone(self.x.delete_node(['a', 'aa', 'aaa']))
+        self.assertEqual(aa, self.x.delete_node(['a', 'aa']))
+        self.assertIsNone(self.x.delete_node(['a', 'aa']))
+        self.assertEqual(a, self.x.delete_node(['a']))
+        self.assertIsNone(self.x.delete_node(['a']))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class perm(object):
     def __init__(self, gid=(), uid=None):
         # Convert gid to a sequence if it is not already.
@@ -129,7 +425,13 @@ class endpoint(object):
         self.perm = perm
 
     def __call__(self, publishment):
-        logger.info('notified ' + str(publishment))
+        logger.info('notified ' + str(self.perm) + ' of content ' + str(publishment))
+
+    def __str__(self):
+        return str(self.perm)
+
+    def __repr__(self):
+        return 'perm=' + repr(self.perm)
 
 class TestEndpoint(unittest.TestCase):
     def test_init_error(self):
@@ -202,291 +504,7 @@ class TestPublishment(unittest.TestCase):
         p = publishment(content='content', ttl=12)
         self.assertIsNotNone(repr(p))
 
-class xnode(object):
-    SEPARATOR = '.'
-
-    def __init__(self, key, parent=None):
-        self.key = key
-        self.parent = parent
-        if self.parent:
-            self.parent.add_child(self)
-        self.children = {}
-        self.data = None
-
-    def delete(self):
-        if self.parent:
-            self.parent.remove_child(self)
-
-    def add_child(self, child):
-        self.children[child.key] = child
-
-    def remove_child(self, child):
-        del self.children[child.key]
-
-    def check_keys(keys):
-        if isinstance(keys, str):
-            return keys.split(xnode.SEPARATOR)
-        elif not hasattr(keys, '__iter__'):
-            raise TypeError('invalid keys')
-        elif not hasattr(keys, 'pop'):
-            # If keys is iter-able, but not pop-able, then convert it into a list.
-            return list(keys)
-
-        return keys
-
-    def find_closest(self, keys):
-        if not keys:
-            return self, ()
-
-        keys = xnode.check_keys(keys)
-
-        try:
-            n = self
-            while len(keys):
-                subkey = keys[0]
-                n = n.children[subkey]
-                keys.pop(0)
-        except KeyError:
-            pass
-
-        return n, keys
-
-    def up(self, list=None):
-        if list is None:
-            list = []
-
-        list.append(self)
-        if self.parent:
-            return self.parent.up(list)
-        else:
-            return list
-
-    def down(self, list=None, prefix=True):
-        if list is None:
-            list = []
-
-        if prefix:
-            list.append(self)
-
-        for key, child in self.children.items():
-            child.down(list)
-
-        if not prefix:
-            list.append(self)
-
-        return list
-
-    def __str__(self):
-        return 'key=' + str(self.key)
-
-    def __repr__(self):
-        return 'key=' + repr(self.key) + ', parent=' + repr(self.parent) + ', children=' + repr(self.children) + ', data=' + repr(self.data)
-
-class TestXNode(unittest.TestCase):
-    def setUp(self):
-        self.r = xnode('r')
-        self.a = xnode('a', self.r)
-        self.aa = xnode('aa', self.a)
-        self.ab = xnode('ab', self.a)
-        self.aba = xnode('aba', self.ab)
-        self.abaa = xnode('abaa', self.aba)
-        self.ac = xnode('ac', self.a)
-        self.b = xnode('b', self.r)
-        self.c = xnode('c', self.r)
-        self.ca = xnode('ca', self.c)
-        self.cb = xnode('cb', self.c)
-
-    def test_init_none(self):
-        self.assertRaises(TypeError, xnode)
-
-    def test_init_key(self):
-        n = xnode('key')
-        self.assertEqual('key', n.key)
-        self.assertIsNone(n.parent)
-        self.assertEqual(0, len(n.children))
-
-    def test_init_add(self):
-        n = xnode('')
-        n.add_child(xnode(''))
-        self.assertEqual(1, len(n.children))
-
-    def test_init_remove(self):
-        n = xnode('')
-        c = xnode('')
-        n.add_child(c)
-        n.remove_child(c)
-        self.assertEqual(0, len(n.children))
-
-    def test_check_keys_tuple(self):
-        keys = xnode.check_keys(('a', 'aa', 'aaa'))
-        self.assertTrue(isinstance(keys, list))
-
-    def test_check_keys_list(self):
-        keys = xnode.check_keys(['a', 'aa', 'aaa'])
-        self.assertTrue(isinstance(keys, list))
-
-    def test_check_keys_none(self):
-        self.assertRaises(TypeError, xnode.check_keys, None)
-
-    def test_check_keys_int(self):
-        self.assertRaises(TypeError, xnode.check_keys, 1)
-
-    def test_check_keys_string(self):
-        keys = xnode.check_keys('a.aa.aaa')
-        self.assertTrue(isinstance(keys, list))
-
-    def test_up(self):
-        l = self.abaa.up()
-        self.assertEqual(5, len(l))
-        self.assertEqual(self.abaa, l[0])
-        self.assertEqual(self.r, l[-1])
-
-    def test_down_prefix(self):
-        l = self.r.down()
-        self.assertEqual(11, len(l))
-        self.assertEqual(self.r, l[0])
-
-    def test_down_postfix(self):
-        l = self.r.down(prefix=False)
-        self.assertEqual(11, len(l))
-        self.assertEqual(self.r, l[-1])
-
-    def test_get_by_none(self):
-        n, subkeys = self.r.find_closest(None)
-        self.assertEqual(self.r, n)
-        self.assertEqual(0, len(subkeys))
-
-    def test_get_by_empty(self):
-        n, subkeys = self.r.find_closest('')
-        self.assertEqual(self.r, n)
-        self.assertEqual(0, len(subkeys))
-
-    def test_get_by_string(self):
-        n, subkeys = self.r.find_closest('a.ab.aba.abaa')
-        self.assertEqual(self.abaa, n)
-
-    def test_get_by_sequence(self):
-        n, subkeys = self.r.find_closest(('a', 'ab', 'aba', 'abaa'))
-        self.assertEqual(self.abaa, n)
-
-    def test_get_by_list(self):
-        n, subkeys = self.r.find_closest(['a', 'ab', 'aba', 'abaa'])
-        self.assertEqual(self.abaa, n)
-        self.assertEqual(0, len(subkeys))
-
-    def test_get_by_string_missing(self):
-        n, subkeys = self.r.find_closest('a.ab.aba.abaa.abaaa')
-        self.assertEqual(self.abaa, n)
-        self.assertEqual(1, len(subkeys))
-
-    def test_str(self):
-        self.assertIsNotNone(str(self.r))
-
-    def test_repr(self):
-        self.assertIsNotNone(repr(self.r))
-
-class xnodes(object):
-    def __init__(self):
-        self.root = xnode('<root>')
-
-    def find_closest(self, keys):
-        return self.root.find_closest(keys)
-
-    def has_node(self, keys):
-        parent, subkeys = self.root.find_closest(keys)
-        return not len(subkeys)
-
-    def get_node(self, keys):
-        parent, subkeys = self.root.find_closest(keys)
-        if not len(subkeys):
-            return parent
-
-        return None
-
-    def create_node(self, keys):
-        if not keys:
-            return self.root
-
-        # Find the closest existing node.
-        n, subkeys = self.root.find_closest(keys)
-
-        # Create new nodes.
-        for subkey in subkeys:
-            n = xnode(subkey, n)
-
-        return n
-
-    def delete_node(self, keys):
-        n = self.get_node(keys)
-        if not n:
-            return None
-
-        n.delete()
-
-        return n
-
-class TestXNodes(unittest.TestCase):
-    def setUp(self):
-        self.x = xnodes()
-
-    def test_find_closest_empty(self):
-        parent, subkeys = self.x.find_closest(['a', 'aa', 'aaa'])
-        self.assertEqual(self.x.root, parent)
-        self.assertEqual(3, len(subkeys))
-
-    def test_create(self):
-        a = self.x.create_node(['a'])
-        self.assertEqual('a', a.key)
-        self.assertEqual(self.x.root, a.parent)
-
-        aa = self.x.create_node(['a', 'aa'])
-        self.assertEqual('aa', aa.key)
-        self.assertEqual(a, aa.parent)
-
-    def test_has_node(self):
-        # setup
-        a = self.x.create_node(['a'])
-        aa = self.x.create_node(['a', 'aa'])
-
-        self.assertTrue(self.x.has_node(['a']))
-        self.assertTrue(self.x.has_node(['a', 'aa']))
-        self.assertFalse(self.x.has_node(['a', 'aa', 'aaa']))
-
-    def test_has_node(self):
-        # setup
-        a = self.x.create_node(['a'])
-        aa = self.x.create_node(['a', 'aa'])
-
-        self.assertEqual(a, self.x.get_node(['a']))
-        self.assertEqual(aa, self.x.get_node(['a', 'aa']))
-        self.assertIsNone(self.x.get_node(['a', 'aa', 'aaa']))
-
-    def test_delete(self):
-        # setup
-        a = self.x.create_node(['a'])
-        aa = self.x.create_node(['a', 'aa'])
-
-        self.assertIsNone(self.x.delete_node(['a', 'aa', 'aaa']))
-        self.assertEqual(aa, self.x.delete_node(['a', 'aa']))
-        self.assertIsNone(self.x.delete_node(['a', 'aa']))
-        self.assertEqual(a, self.x.delete_node(['a']))
-        self.assertIsNone(self.x.delete_node(['a']))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-class node(object):
+class topic_node(object):
     def __init__(self, topic):
         self.topic = topic
         self.publishments = []
@@ -532,10 +550,14 @@ class node(object):
     def __repr__(self):
         return 'topic=' + str(self.topic) + ', subscriptions=' + ', publishments='
 
+class TestTopicNode(unittest.TestCase):
+    def test_init_error(self):
+        self.assertRaises(TypeError, topic_node)
+
 class service(object):
     def __init__(self):
         self.endpoints = set()
-        self.nodes = xnodes()
+        self.root = root()
         self.separator = '.'
 
     def create_endpoint(self, endpoint):
@@ -546,101 +568,113 @@ class service(object):
         self.endpoints.remove(endpoint)
 
     def create_node(self, topic):
-        return self.nodes.create_node(topic.name)
+        return self.root.create_node(topic.name)
 
     def delete_node(self, topic):
-        return self.nodes.delete_node(topic.name)
+        return self.root.delete_node(topic.name)
         # TODO: remove subscriptions
 
     def publish(self, topic, publishment, endpoint):
-        n = self.create_node(topic)
-        if not n.data:
-            n.data = node(topic)
+        s = self.create_node(topic)
+        if not s.data:
+            s.data = topic_node(topic)
 
-        return n.data.publish(publishment, endpoint)
+        return s.data.publish(publishment, endpoint)
 
     def subscribe(self, topic, endpoint):
-        n = self.create_node(topic)
-        if not n.data:
-            n.data = node(topic)
+        s = self.create_node(topic)
+        if not s.data:
+            s.data = topic_node(topic)
 
-        return n.data.subscribe(endpoint)
+        return s.data.subscribe(endpoint)
 
     def read(self, topic, endpoint):
-        n = self.create_node(topic)
-        if not n.data:
+        s = self.create_node(topic)
+        if not s.data:
             return None
 
-        return n.data.read(endpoint)
+        return s.data.read(endpoint)
 
 class TestService(unittest.TestCase):
-    def test_create(self):
+    def setUp(self):
+        self.s = service()
+
+        self.mike = endpoint(perm(gid='user', uid='mike'))
+        self.s.create_endpoint(self.mike)
+
+        self.chloe = endpoint(perm(gid='admin', uid='chloe'))
+        self.s.create_endpoint(self.chloe)
+
+        self.ta = topic('status', perm(gid='admin'), perm(gid='admin'))
+        self.blog = topic('blog', perm(gid='user', uid='mike'))
+
+    def test_create_node(self):
         s = service()
         s.create_node(topic('a.aa.aaa'))
         s.create_node(topic('b.ba.baa.baaa'))
         s.create_node(topic('b.ba.bab.baba'))
-        l = s.nodes.root.down()
+        l = [n for n in s.root.root.prefix()]
         self.assertEqual(10, len(l))
+
+    def test_prepublish(self):
+        self.s.publish(topic=self.blog, publishment=publishment('version0'), endpoint=self.mike)
+
+    def test_subscribe(self):
+        self.assertRaises(PermissionError, subscription=self.s.subscribe, topic=self.ta, endpoint=self.mike)
+        self.s.subscribe(topic=self.ta, endpoint=self.chloe)
+        self.s.subscribe(topic=self.blog, endpoint=self.mike)
+        self.s.subscribe(topic=self.blog, endpoint=self.chloe)
+
+    def test_publish(self):
+        self.assertRaises(PermissionError, self.s.publish, topic=self.ta, publishment=publishment('fails'), endpoint=self.mike)
+        self.s.publish(topic=self.ta, publishment=publishment('admin version1'), endpoint=self.chloe)
+        self.s.publish(topic=self.blog, publishment=publishment('version1'), endpoint=self.mike)
+        self.s.publish(topic=self.blog, publishment=publishment('version2'), endpoint=self.mike)
+        self.s.publish(topic=self.blog, publishment=publishment('version3'), endpoint=self.mike)
+        self.assertRaises(PermissionError, self.s.publish, topic=self.blog, publishment=publishment('fails'), endpoint=self.chloe)
+
+    def test_read(self):
+        self.s.publish(topic=self.blog, publishment=publishment('version1'), endpoint=self.mike)
+        self.s.publish(topic=self.blog, publishment=publishment('version2'), endpoint=self.mike)
+        self.s.publish(topic=self.blog, publishment=publishment('version3'), endpoint=self.mike)
+
+        #self.assertRaises(PermissionError, self.s.read, topic=ta, endpoint=mike)
+        self.assertEqual(None, self.s.read(topic=self.ta, endpoint=self.chloe))
+        self.assertEqual('version3', self.s.read(topic=self.blog, endpoint=self.mike).content)
+        self.assertEqual('version3', self.s.read(topic=self.blog, endpoint=self.chloe).content)
+
+    def test_delete_endpoint(self):
+        self.s.delete_endpoint(self.mike)
+        self.s.delete_endpoint(self.chloe)
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger('pubsub')
 
-    ea = endpoint(perm(gid='user', uid='mike'))
-    eb = endpoint(perm(gid='admin', uid='chloe'))
-    print('ea', str(ea))
-    print('eb', str(eb))
+    s = service()
 
-    n = service()
-    n.create_endpoint(ea)
-    n.create_endpoint(eb)
+    mike = endpoint(perm(gid='user', uid='mike'))
+    s.create_endpoint(mike)
+    print('mike', str(mike))
 
-    ta = topic('admin_stuff', perm(gid='admin'), perm(gid='admin'))
-    tb = topic('mikes_stuff', perm(gid='user', uid='mike'))
-    print('ta', str(ta))
-    print('tb', str(tb))
+    chloe = endpoint(perm(gid='admin', uid='chloe'))
+    s.create_endpoint(chloe)
+    print('chloe', str(chloe))
+
+    blog = topic('blog', perm(gid='user', uid='mike'))
+    print('blog', str(blog))
 
     print('pre-publish')
-    n.publish(topic=tb, publishment=publishment('version0'), endpoint=ea)
+    s.publish(topic=blog, publishment=publishment('version0'), endpoint=mike)
 
     print('subscribe')
-    try:
-        n.subscribe(topic=ta, endpoint=ea)
-    except PermissionError:
-        pass
-    n.subscribe(topic=ta, endpoint=eb)
-
-    n.subscribe(topic=tb, endpoint=ea)
-    n.subscribe(topic=tb, endpoint=eb)
+    s.subscribe(topic=blog, endpoint=mike)
+    s.subscribe(topic=blog, endpoint=chloe)
 
     print('publish')
-    try:
-        n.publish(topic=ta, publishment=publishment('fails'), endpoint=ea)
-    except PermissionError:
-        pass
-    n.publish(topic=ta, publishment=publishment('admin version1'), endpoint=eb)
-
-    n.publish(topic=tb, publishment=publishment('version1'), endpoint=ea)
-    n.publish(topic=tb, publishment=publishment('version2'), endpoint=ea)
-    n.publish(topic=tb, publishment=publishment('version3'), endpoint=ea)
-
-    try:
-        n.publish(topic=tb, publishment=publishment('fails'), endpoint=eb)
-    except PermissionError:
-        pass
-
-    print('read')
-    try:
-        n.read(topic=ta, endpoint=ea)
-    except PermissionError:
-        pass
-    print('ub reads na=' + str(n.read(topic=ta, endpoint=eb)))
-    print('ua reads nb=' + str(n.read(topic=tb, endpoint=ea)))
-    print('ub reads nb=' + str(n.read(topic=tb, endpoint=eb)))
-
-
-    n.delete_endpoint(ea)
-    n.delete_endpoint(eb)
+    s.publish(topic=blog, publishment=publishment('version1'), endpoint=mike)
+    s.publish(topic=blog, publishment=publishment('version2'), endpoint=mike)
+    s.publish(topic=blog, publishment=publishment('version3'), endpoint=mike)
 
     logger.setLevel(level=logging.WARNING)
     unittest.main()
@@ -649,7 +683,7 @@ if __name__ == '__main__':
 """
 hierarchy of nodes (nested subscriptions)
 manage endpoint lifetimes
-
+should pubs just have one gid?
 
 endpoint
   perm
@@ -663,10 +697,7 @@ publishment
   content
   ttl
 
-
-
-
-node
+topic_node
   topic
   publishments
   subscriptions
@@ -674,5 +705,4 @@ node
 service
   endpoints
   nodes
-
 """
