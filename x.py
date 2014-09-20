@@ -211,6 +211,7 @@ class xnode(object):
         if self.parent:
             self.parent.add_child(self)
         self.children = {}
+        self.data = None
 
     def delete(self):
         if self.parent:
@@ -279,7 +280,7 @@ class xnode(object):
         return 'key=' + str(self.key)
 
     def __repr__(self):
-        return 'key=' + repr(self.key) + ', parent=' + repr(self.parent) + ', children=' + repr(self.children)
+        return 'key=' + repr(self.key) + ', parent=' + repr(self.parent) + ', children=' + repr(self.children) + ', data=' + repr(self.data)
 
 class TestXNode(unittest.TestCase):
     def setUp(self):
@@ -386,7 +387,7 @@ class TestXNode(unittest.TestCase):
 
 class xnodes(object):
     def __init__(self):
-        self.root = node('<root>')
+        self.root = xnode('<root>')
 
     def find_closest(self, keys):
         return self.root.find_closest(keys)
@@ -485,15 +486,15 @@ class TestXNodes(unittest.TestCase):
 
 
 
-class node(xnode):
-    def __init__(self, topic, parent=None):
-        xnode.__init__(self, key=topic, parent=parent)
+class node(object):
+    def __init__(self, topic):
+        self.topic = topic
         self.publishments = []
         self.subscriptions = []
 
     def publish(self, publishment, endpoint):
-        if not self.key.can_publish(endpoint.perm):
-            raise PermissionError('publish failed, topic perm=' + str(self.key.from_perm) + ', endpoint perm=' + str(endpoint.perm))
+        if not self.topic.can_publish(endpoint.perm):
+            raise PermissionError('publish failed, topic perm=' + str(self.topic.from_perm) + ', endpoint perm=' + str(endpoint.perm))
 
         self.publishments.append(publishment)
 
@@ -501,15 +502,15 @@ class node(xnode):
             self.notify(subscription, publishment)
 
     def subscribe(self, endpoint):
-        if not self.key.can_subscribe(endpoint.perm):
-            raise PermissionError('subscribe failed, topic perm=' + str(self.key.to_perm) + ', endpoint perm=' + str(endpoint.perm))
+        if not self.topic.can_subscribe(endpoint.perm):
+            raise PermissionError('subscribe failed, topic perm=' + str(self.topic.to_perm) + ', endpoint perm=' + str(endpoint.perm))
 
         self.subscriptions.append(endpoint)
         self.notify(endpoint, self.latest())
 
     def read(self, endpoint):
-        if not self.key.can_subscribe(endpoint.perm):
-            raise PermissionError('read failed, topic perm=' + str(self.key.to_perm) + ', endpoint perm=' + str(endpoint.perm))
+        if not self.topic.can_subscribe(endpoint.perm):
+            raise PermissionError('read failed, topic perm=' + str(self.topic.to_perm) + ', endpoint perm=' + str(endpoint.perm))
 
         return self.latest()
 
@@ -520,21 +521,21 @@ class node(xnode):
         return self.publishments[-1]
 
     def notify(self, subscription, publishment):
-        if not self.key.to_perm.has_permission(subscription.perm):
-            raise PermissionError('notify failed, topic perm=' + str(self.key.to_perm) + ', endpoint perm=' + str(subscription.perm))
+        if not self.topic.to_perm.has_permission(subscription.perm):
+            raise PermissionError('notify failed, topic perm=' + str(self.topic.to_perm) + ', endpoint perm=' + str(subscription.perm))
 
         subscription(publishment)
 
     def __str__(self):
-        return 'topic=' + str(self.key)
+        return 'topic=' + str(self.topic)
 
     def __repr__(self):
-        return 'topic=' + str(self.key) + ', subscriptions=' + ', publishments='
+        return 'topic=' + str(self.topic) + ', subscriptions=' + ', publishments='
 
 class service(object):
     def __init__(self):
         self.endpoints = set()
-        self.root = node('<root>')
+        self.nodes = xnodes()
         self.separator = '.'
 
     def create_endpoint(self, endpoint):
@@ -545,106 +546,46 @@ class service(object):
         self.endpoints.remove(endpoint)
 
     def create_node(self, topic):
-        if not topic:
-            return self.root
-
-        if isinstance(topic, str):
-            # If the key is specified as a string, break into a sequence.
-            topic = topic.split(self.separator)
-        elif hasattr(topic, '__iter__') and not hasattr(topic, 'pop'):
-            # If key is iter-able, but not pop-able, then convert it into a list.
-            topic = list(topic)
-
-        return self.__create_node__(topic)
-
-    def __create_node__(self, topic):
-        n = self.root
-
-        # Find the lowest node that is already created.
-        try:
-            while True:
-                subtopic = topic[0]
-                n = n.children[subtopic]
-                topic.pop(0)
-        except KeyError:
-            pass
-
-        # Create any new nodes.
-        for subtopic in topic:
-            n = node(subtopic, n)
+        return self.nodes.create_node(topic.name)
 
     def delete_node(self, topic):
+        return self.nodes.delete_node(topic.name)
         # TODO: remove subscriptions
-        # TODO: remove node
-        pass
-
-    def has_node(self, topic):
-        try:
-            n = self.root
-            while True:
-                subtopic = topic[0]
-                n = n.children[subtopic]
-                topic.pop(0)
-        except KeyError:
-            return False
-
-        return True
-
-    def get_node(self, topic):
-        return self.root.get_descendent(topic)
-
-    def get_or_create_node(self, topic):
-        try:
-            return self.get_node(topic)
-        except KeyError:
-            self.create_node(topic)
-            return self.get_node(topic)
 
     def publish(self, topic, publishment, endpoint):
-        n = self.get_or_create_node(topic)
-        return n.publish(publishment, endpoint)
+        n = self.create_node(topic)
+        if not n.data:
+            n.data = node(topic)
+
+        return n.data.publish(publishment, endpoint)
 
     def subscribe(self, topic, endpoint):
-        n = self.get_or_create_node(topic)
-        return n.subscribe(endpoint)
+        n = self.create_node(topic)
+        if not n.data:
+            n.data = node(topic)
+
+        return n.data.subscribe(endpoint)
 
     def read(self, topic, endpoint):
-        n = self.get_node(topic)
-        return n.read(endpoint)
+        n = self.create_node(topic)
+        if not n.data:
+            return None
 
-
-    def get_descendent(self, names, separator='.'):
-        if not names:
-            return self
-
-        if isinstance(names, str):
-            # If the key is specified as a string, break into a sequence.
-            names = names.split(separator)
-        elif hasattr(names, '__iter__') and not hasattr(names, 'pop'):
-            # If key is iter-able, but not pop-able, then convert it into a list.
-            names = list(names)
-
-        return self.__get_descendent__(names)
-
-
-
+        return n.data.read(endpoint)
 
 class TestService(unittest.TestCase):
     def test_create(self):
         s = service()
-        s.__create_node__(['a', 'aa', 'aaa'])
-        s.__create_node__(['a', 'aa', 'aab'])
-        s.__create_node__(['b', 'ba', 'baa'])
-        s.create_node('b.ba.baa.baaa')
-        l = s.root.down()
-        for n in l:
-            print(n.key)
-
+        s.create_node(topic('a.aa.aaa'))
+        s.create_node(topic('b.ba.baa.baaa'))
+        s.create_node(topic('b.ba.bab.baba'))
+        l = s.nodes.root.down()
+        self.assertEqual(10, len(l))
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
-    """
+
     ea = endpoint(perm(gid='user', uid='mike'))
     eb = endpoint(perm(gid='admin', uid='chloe'))
     print('ea', str(ea))
@@ -700,7 +641,7 @@ if __name__ == '__main__':
 
     n.delete_endpoint(ea)
     n.delete_endpoint(eb)
-    """
+
     logger.setLevel(level=logging.WARNING)
     unittest.main()
 
