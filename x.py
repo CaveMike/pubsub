@@ -253,8 +253,6 @@ class TestNode(unittest.TestCase):
         self.assertRaises(TypeError, node)
 
 class xnode(object):
-    SEPARATOR = '.'
-
     def __init__(self, name, parent=None):
         self.name = name
         self.parent = parent
@@ -297,73 +295,109 @@ class xnode(object):
 
         return list
 
-    def get_descendent(self, names):
+    def get_descendent(self, names, separator='.'):
         if not names:
             return self
 
         if isinstance(names, str):
             # If the name is specified as a string, break into a sequence.
-            names = names.split(xnode.SEPARATOR)
+            names = names.split(separator)
         elif hasattr(names, '__iter__') and not hasattr(names, 'pop'):
             # If name is iter-able, but not pop-able, then convert it into a list.
             names = list(names)
 
+        return self.__get_descendent__(names)
+
+    def __get_descendent__(self, names):
+        if not names:
+            return self
+
         name = names.pop(0)
 
-        return self.children[name].get_descendent(names)
+        return self.children[name].__get_descendent__(names)
+
+    def __str__(self):
+        return 'name=' + str(self.name)
+
+    def __repr__(self):
+        return 'name=' + repr(self.name) + ', parent=' + repr(self.parent) + ', children=' + repr(self.children)
 
 class TestXNode(unittest.TestCase):
+    def setUp(self):
+        self.r = xnode('r')
+        self.a = xnode('a', self.r)
+        self.aa = xnode('aa', self.a)
+        self.ab = xnode('ab', self.a)
+        self.aba = xnode('aba', self.ab)
+        self.abaa = xnode('abaa', self.aba)
+        self.ac = xnode('ac', self.a)
+        self.b = xnode('b', self.r)
+        self.c = xnode('c', self.r)
+        self.ca = xnode('ca', self.c)
+        self.cb = xnode('cb', self.c)
+
+    def test_init_none(self):
+        self.assertRaises(TypeError, xnode)
+
+    def test_init_name(self):
+        n = xnode('name')
+        self.assertEqual('name', n.name)
+        self.assertIsNone(n.parent)
+        self.assertEqual(0, len(n.children))
+
+    def test_init_add(self):
+        n = xnode('')
+        n.add_child(xnode(''))
+        self.assertEqual(1, len(n.children))
+
+    def test_init_remove(self):
+        n = xnode('')
+        c = xnode('')
+        n.add_child(c)
+        n.remove_child(c)
+        self.assertEqual(0, len(n.children))
+
     def test_up(self):
-        r = xnode('r')
-        a = xnode('a', r)
-        aa = xnode('aa', a)
-        ab = xnode('ab', a)
-        aba = xnode('aba', ab)
-        abaa = xnode('abaa', aba)
-        ac = xnode('ac', a)
-        b = xnode('b', r)
-        c = xnode('c', r)
-        ca = xnode('ca', c)
-        cb = xnode('cb', c)
+        l = self.abaa.up()
+        self.assertEqual(5, len(l))
+        self.assertEqual(self.abaa, l[0])
+        self.assertEqual(self.r, l[-1])
 
-        n = r.get_descendent(None)
-        print('n', n.name)
+    def test_down_prefix(self):
+        l = self.r.down()
+        self.assertEqual(11, len(l))
+        self.assertEqual(self.r, l[0])
 
-        print(r.get_descendent('').name)
+    def test_down_postfix(self):
+        l = self.r.down(prefix=False)
+        self.assertEqual(11, len(l))
+        self.assertEqual(self.r, l[-1])
 
-        print(r.get_descendent('c.cb').name)
+    def test_get_by_none(self):
+        n = self.r.get_descendent(None)
+        self.assertEqual(self.r, n)
 
-        n = r.get_descendent('a.ab.aba.abaa')
-        print('n', n.name)
+    def test_get_by_empty(self):
+        n = self.r.get_descendent('')
+        self.assertEqual(self.r, n)
 
-        n = r.get_descendent(['a', 'ab', 'aba', 'abaa'])
-        print('n', n.name)
+    def test_get_by_string(self):
+        n = self.r.get_descendent('a.ab.aba.abaa')
+        self.assertEqual(self.abaa, n)
 
-        n = r.get_descendent(('a', 'ab', 'aba', 'abaa'))
-        print('n', n.name)
+    def test_get_by_sequence(self):
+        n = self.r.get_descendent(('a', 'ab', 'aba', 'abaa'))
+        self.assertEqual(self.abaa, n)
 
-        print('')
-        print('----up----')
-        list = abaa.up()
-        for l in list:
-            print(l.name)
+    def test_get_by_list(self):
+        n = self.r.get_descendent(['a', 'ab', 'aba', 'abaa'])
+        self.assertEqual(self.abaa, n)
 
-        print('----down----')
-        list = r.down(prefix=True)
-        for l in list:
-            print(l.name)
+    def test_str(self):
+        self.assertIsNotNone(str(self.r))
 
-        print('----down----')
-        list = r.down(prefix=False)
-        for l in list:
-            print(l.name)
-
-        print('----down----')
-        ab.delete()
-        list = r.down()
-        for l in list:
-            print(l.name)
-
+    def test_repr(self):
+        self.assertIsNotNone(repr(self.r))
 
 class store(object):
     def __init__(self):
