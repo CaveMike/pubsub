@@ -634,12 +634,13 @@ class TestService(unittest.TestCase):
         self.assertRaises(PermissionError, self.s.publish, topic=self.blog, publishment=publishment('fails'), endpoint=self.chloe)
 
     def test_read(self):
+        self.s.publish(topic=self.ta, publishment=publishment('admin version1'), endpoint=self.chloe)
         self.s.publish(topic=self.blog, publishment=publishment('version1'), endpoint=self.mike)
         self.s.publish(topic=self.blog, publishment=publishment('version2'), endpoint=self.mike)
         self.s.publish(topic=self.blog, publishment=publishment('version3'), endpoint=self.mike)
 
-        #self.assertRaises(PermissionError, self.s.read, topic=ta, endpoint=mike)
-        self.assertEqual(None, self.s.read(topic=self.ta, endpoint=self.chloe))
+        self.assertRaises(PermissionError, self.s.read, topic=self.ta, endpoint=self.mike)
+        self.assertEqual('admin version1', self.s.read(topic=self.ta, endpoint=self.chloe).content)
         self.assertEqual('version3', self.s.read(topic=self.blog, endpoint=self.mike).content)
         self.assertEqual('version3', self.s.read(topic=self.blog, endpoint=self.chloe).content)
 
