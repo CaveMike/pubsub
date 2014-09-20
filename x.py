@@ -202,25 +202,11 @@ class TestPublishment(unittest.TestCase):
         p = publishment(content='content', ttl=12)
         self.assertIsNotNone(repr(p))
 
-class subscription(object):
-    def __init__(self, endpoint):
-        self.endpoint = endpoint
-
-    def notify(self, publishment, to_perm=perm()):
-        if not to_perm.has_permission(self.endpoint.perm):
-            raise PermissionError('notify failed, endpoint perm=' + str(self.endpoint.perm) + ', pub perm=' + str(to_perm))
-
-        self.endpoint(publishment)
-
-class TestSubscription(unittest.TestCase):
-    def test_init_error(self):
-        self.assertRaises(TypeError, subscription)
-
 class node(object):
     def __init__(self, topic):
         self.topic = topic
-        self.subscriptions = []
         self.publishments = []
+        self.subscriptions = []
 
     def publish(self, publishment, endpoint):
         if not self.topic.can_publish(endpoint.perm):
@@ -235,10 +221,8 @@ class node(object):
         if not self.topic.can_subscribe(endpoint.perm):
             raise PermissionError('subscribe failed, topic perm=' + str(self.topic.to_perm) + ', endpoint perm=' + str(endpoint.perm))
 
-        s = subscription(endpoint)
-        self.subscriptions.append(s)
-
-        self.notify(s, self.latest())
+        self.subscriptions.append(endpoint)
+        self.notify(endpoint, self.latest())
 
     def read(self, endpoint):
         if not self.topic.can_subscribe(endpoint.perm):
@@ -253,33 +237,189 @@ class node(object):
         return self.publishments[-1]
 
     def notify(self, subscription, publishment):
-        subscription.notify(publishment, self.topic.to_perm)
+        if not self.topic.to_perm.has_permission(subscription.perm):
+            raise PermissionError('notify failed, topic perm=' + str(self.topic.to_perm) + ', endpoint perm=' + str(subscription.perm))
+
+        subscription(publishment)
 
     def __str__(self):
         return 'topic=' + str(self.topic)
+
+    def __repr__(self):
+        return 'topic=' + str(self.topic) + ', subscriptions=' + ', publishments='
 
 class TestNode(unittest.TestCase):
     def test_init_error(self):
         self.assertRaises(TypeError, node)
 
-class service(object):
+class xnode(object):
+    SEPARATOR = '.'
+
+    def __init__(self, name, parent=None):
+        self.name = name
+        self.parent = parent
+        if self.parent:
+            self.parent.add_child(self)
+        self.children = {}
+
+    def delete(self):
+        if self.parent:
+            self.parent.remove_child(self)
+
+    def add_child(self, child):
+        self.children[child.name] = child
+
+    def remove_child(self, child):
+        del self.children[child.name]
+
+    def up(self, list=None):
+        if list is None:
+            list = []
+
+        list.append(self)
+        if self.parent:
+            return self.parent.up(list)
+        else:
+            return list
+
+    def down(self, list=None, prefix=True):
+        if list is None:
+            list = []
+
+        if prefix:
+            list.append(self)
+
+        for name, child in self.children.items():
+            child.down(list)
+
+        if not prefix:
+            list.append(self)
+
+        return list
+
+    def get_descendent(self, names):
+        if not names:
+            return self
+
+        if isinstance(names, str):
+            # If the name is specified as a string, break into a sequence.
+            names = names.split(xnode.SEPARATOR)
+        elif hasattr(names, '__iter__') and not hasattr(names, 'pop'):
+            # If name is iter-able, but not pop-able, then convert it into a list.
+            names = list(names)
+
+        name = names.pop(0)
+
+        return self.children[name].get_descendent(names)
+
+class TestXNode(unittest.TestCase):
+    def test_up(self):
+        r = xnode('r')
+        a = xnode('a', r)
+        aa = xnode('aa', a)
+        ab = xnode('ab', a)
+        aba = xnode('aba', ab)
+        abaa = xnode('abaa', aba)
+        ac = xnode('ac', a)
+        b = xnode('b', r)
+        c = xnode('c', r)
+        ca = xnode('ca', c)
+        cb = xnode('cb', c)
+
+        n = r.get_descendent(None)
+        print('n', n.name)
+
+        print(r.get_descendent('').name)
+
+        print(r.get_descendent('c.cb').name)
+
+        n = r.get_descendent('a.ab.aba.abaa')
+        print('n', n.name)
+
+        n = r.get_descendent(['a', 'ab', 'aba', 'abaa'])
+        print('n', n.name)
+
+        n = r.get_descendent(('a', 'ab', 'aba', 'abaa'))
+        print('n', n.name)
+
+        print('')
+        print('----up----')
+        list = abaa.up()
+        for l in list:
+            print(l.name)
+
+        print('----down----')
+        list = r.down(prefix=True)
+        for l in list:
+            print(l.name)
+
+        print('----down----')
+        list = r.down(prefix=False)
+        for l in list:
+            print(l.name)
+
+        print('----down----')
+        ab.delete()
+        list = r.down()
+        for l in list:
+            print(l.name)
+
+
+class store(object):
     def __init__(self):
         self.endpoints = set()
         self.nodes = {}
 
-    def add_endpoint(self, endpoint):
+    def create_endpoint(self, endpoint):
         self.endpoints.add(endpoint)
 
-    def remove_endpoint(self, endpoint):
+    def delete_endpoint(self, endpoint):
+        # TODO: remove subscriptions
         self.endpoints.remove(endpoint)
+
+    def create_node(self, topic):
+        self.nodes[topic] = node(topic)
+
+    def delete_node(self, topic):
+        # TODO: remove subscriptions
+#        del topic self.nodes
+        pass
 
     def get_node(self, topic):
         return self.nodes[topic]
 
     def get_or_create_node(self, topic):
         if not topic in self.nodes:
-            n = node(topic)
-            self.nodes[topic] = n
+            self.create_node(topic)
+
+        return self.get_node(topic)
+
+class service(object):
+    def __init__(self):
+        self.endpoints = set()
+        self.nodes = {}
+
+    def create_endpoint(self, endpoint):
+        self.endpoints.add(endpoint)
+
+    def delete_endpoint(self, endpoint):
+        # TODO: remove subscriptions
+        self.endpoints.remove(endpoint)
+
+    def create_node(self, topic):
+        self.nodes[topic] = node(topic)
+
+    def delete_node(self, topic):
+        # TODO: remove subscriptions
+#        del topic self.nodes
+        pass
+
+    def get_node(self, topic):
+        return self.nodes[topic]
+
+    def get_or_create_node(self, topic):
+        if not topic in self.nodes:
+            self.create_node(topic)
 
         return self.get_node(topic)
 
@@ -295,7 +435,6 @@ class service(object):
         n = self.get_node(topic)
         return n.read(endpoint)
 
-
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
@@ -306,8 +445,8 @@ if __name__ == '__main__':
     print('eb', str(eb))
 
     n = service()
-    n.add_endpoint(ea)
-    n.add_endpoint(eb)
+    n.create_endpoint(ea)
+    n.create_endpoint(eb)
 
     ta = topic('admin_stuff', perm(gid='admin'), perm(gid='admin'))
     tb = topic('mikes_stuff', perm(gid='user', uid='mike'))
@@ -353,8 +492,8 @@ if __name__ == '__main__':
     print('ub reads nb=' + str(n.read(topic=tb, endpoint=eb)))
 
 
-    n.remove_endpoint(ea)
-    n.remove_endpoint(eb)
+    n.delete_endpoint(ea)
+    n.delete_endpoint(eb)
 
     logger.setLevel(level=logging.WARNING)
     unittest.main()
@@ -379,8 +518,6 @@ publishment
 
 
 
-subscription
-  endpoint
 
 node
   topic
