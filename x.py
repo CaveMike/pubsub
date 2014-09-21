@@ -46,6 +46,9 @@ class node(object):
         return keys
 
     def __init__(self, key, parent=None, data=None, owner=None):
+        """
+        Create a node.  If a parent is specified, link the parent and child nodes.
+        """
         self.key = key
 
         self.parent = parent
@@ -58,15 +61,21 @@ class node(object):
         self.owner = owner
 
     def delete(self):
+        """
+        Delete this node.  If this node has a parent, unlink the parent and child nodes.
+        """
         if self.parent:
             del self.parent.children[self.key]
 
     def create_child(self, keys):
+        """
+        Create a child node using the specified key.
+        """
         if not keys:
             return self
 
         # Find the closest existing node.
-        n, subkeys = self.find_closest(keys)
+        n, subkeys = self.find_closest_child(keys)
 
         # Create new nodes.
         for subkey in subkeys:
@@ -76,19 +85,22 @@ class node(object):
         return n
 
     def delete_child(self, keys):
-        # Find the child.
+        """
+        Delete the child node specified by the key if it exists.
+        Return the deleted node if it exists; otherwise return None.
+        """
         n = self.get_node(keys)
-
-        # If the child does not exist, fail.
         if not n:
             return None
 
         n.delete()
-
-        # Return the deleted child.
         return n
 
-    def find_closest(self, keys):
+    def find_closest_child(self, keys):
+        """
+        Return the child node specified by the key.
+        If the node does not exist, return its closest ancestor and the remaining subkeys.
+        """
         if not keys:
             return self, ()
 
@@ -103,45 +115,71 @@ class node(object):
         except KeyError:
             pass
 
-        # Return the closest and the remaining keys.
         return s, keys
 
     def has_node(self, keys):
-        parent, subkeys = self.find_closest(keys)
+        """
+        If the child node specified by the key exists, return True; otherwise return False.
+        """
+        parent, subkeys = self.find_closest_child(keys)
         return not len(subkeys)
 
     def get_node(self, keys):
-        parent, subkeys = self.find_closest(keys)
+        """
+        Return the child node specified by the key if it exists; otherwise return None.
+        """
+        parent, subkeys = self.find_closest_child(keys)
         if not len(subkeys):
             return parent
 
         return None
 
     def ancestors(self):
+        """
+        Return an iterator for this nodes ancestors (parent, grandparent, etc.).
+        """
         if self.parent:
             yield from self.parent.self_and_ancestors()
 
     def self_and_ancestors(self):
+        """
+        Return an iterator for this node and its ancestors (self, parent, grandparent, etc.).
+        """
         yield self
         yield from self.ancestors()
 
-    def descendents(self):
+    def descendants(self):
+        """
+        Return an iterator for this nodes descendants (children, grandchildren, etc.).
+        """
         for key, child in self.children.items():
             yield from child.prefix()
 
     def prefix(self):
+        """
+        Return an iterator for this node and its descendants (children, grandchildren, etc.)
+        with the parent before the children (prefix).
+        """
         yield self
-        yield from self.descendents()
+        yield from self.descendants()
 
     def postfix(self):
-        yield from self.descendents()
+        """
+        Return an iterator for this node and its descendants (children, grandchildren, etc.)
+        with the parent after the children (postfix).
+        """
+        yield from self.descendants()
         yield self
 
     def __str__(self):
         return 'key=' + str(self.key)
 
     def __repr__(self):
-        return 'key=' + repr(self.key) + ', parent=' + repr(self.parent) + ', children=' + repr(self.children) + ', data=' + repr(self.data)
+        return 'key=' + repr(self.key) + \
+            ', parent=' + repr(self.parent) + \
+            ', children=' + repr(self.children) + \
+            ', data=' + repr(self.data) + \
+            ', owner=' + repr(self.owner)
 
 class TestNode(unittest.TestCase):
     def setUp(self):
@@ -185,30 +223,30 @@ class TestNode(unittest.TestCase):
         self.assertTrue(isinstance(keys, list))
 
     def test_get_by_none(self):
-        s, subkeys = self.r.find_closest(None)
+        s, subkeys = self.r.find_closest_child(None)
         self.assertEqual(self.r, s)
         self.assertEqual(0, len(subkeys))
 
     def test_get_by_empty(self):
-        s, subkeys = self.r.find_closest('')
+        s, subkeys = self.r.find_closest_child('')
         self.assertEqual(self.r, s)
         self.assertEqual(0, len(subkeys))
 
     def test_get_by_string(self):
-        s, subkeys = self.r.find_closest('a.ab.aba.abaa')
+        s, subkeys = self.r.find_closest_child('a.ab.aba.abaa')
         self.assertEqual(self.abaa, s)
 
     def test_get_by_sequence(self):
-        s, subkeys = self.r.find_closest(('a', 'ab', 'aba', 'abaa'))
+        s, subkeys = self.r.find_closest_child(('a', 'ab', 'aba', 'abaa'))
         self.assertEqual(self.abaa, s)
 
     def test_get_by_list(self):
-        s, subkeys = self.r.find_closest(['a', 'ab', 'aba', 'abaa'])
+        s, subkeys = self.r.find_closest_child(['a', 'ab', 'aba', 'abaa'])
         self.assertEqual(self.abaa, s)
         self.assertEqual(0, len(subkeys))
 
     def test_get_by_string_missing(self):
-        s, subkeys = self.r.find_closest('a.ab.aba.abaa.abaaa')
+        s, subkeys = self.r.find_closest_child('a.ab.aba.abaa.abaaa')
         self.assertEqual(self.abaa, s)
         self.assertEqual(1, len(subkeys))
 
@@ -234,8 +272,8 @@ class TestNode(unittest.TestCase):
         l = [n for n in self.abaa.self_and_ancestors()]
         self.assertEqual(5, len(l))
 
-    def test_descendents(self):
-        l = [n for n in self.r.descendents()]
+    def test_descendants(self):
+        l = [n for n in self.r.descendants()]
         self.assertEqual(10, len(l))
 
     def test_prefix(self):
@@ -260,9 +298,9 @@ class TestNode(unittest.TestCase):
     def test_get_node_false(self):
         self.assertIsNone(self.r.get_node(['a', 'ab', 'aba', 'abaa', 'xxxxx']))
 
-    def test_find_closest_empty(self):
+    def test_find_closest_child_empty(self):
         n = node(key='')
-        parent, subkeys = n.find_closest(['a', 'aa', 'aaa'])
+        parent, subkeys = n.find_closest_child(['a', 'aa', 'aaa'])
         self.assertEqual(n, parent)
         self.assertEqual(3, len(subkeys))
 
