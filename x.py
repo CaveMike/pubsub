@@ -558,7 +558,6 @@ class service(object):
     def __init__(self):
         self.endpoints = set()
         self.root = root()
-        self.separator = '.'
 
     def create_endpoint(self, endpoint):
         self.endpoints.add(endpoint)
@@ -654,16 +653,16 @@ if __name__ == '__main__':
 
     s = service()
 
-    mike = endpoint(perm(gid='user', uid='mike'))
+    mike = endpoint(perm=perm(gid='user', uid='mike'))
     s.create_endpoint(mike)
-    print('mike', str(mike))
+    print('endpoint', str(mike))
 
-    chloe = endpoint(perm(gid='admin', uid='chloe'))
+    chloe = endpoint(perm=perm(gid='admin', uid='chloe'))
     s.create_endpoint(chloe)
-    print('chloe', str(chloe))
+    print('endpoint', str(chloe))
 
-    blog = topic('blog', perm(gid='user', uid='mike'))
-    print('blog', str(blog))
+    blog = topic(name='blog', from_perm=perm(gid='user', uid='mike'))
+    print('topic', str(blog))
 
     print('pre-publish')
     s.publish(topic=blog, publishment=publishment('version0'), endpoint=mike)
