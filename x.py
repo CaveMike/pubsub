@@ -223,7 +223,7 @@ class TestNode(unittest.TestCase):
         self.assertEqual(11, len(l))
         self.assertEqual(self.r, l[-1])
 
-class root(object):
+class nodes(object):
     def __init__(self):
         self.root = node('<root>')
 
@@ -263,9 +263,9 @@ class root(object):
 
         return s
 
-class TestRoot(unittest.TestCase):
+class TestNodes(unittest.TestCase):
     def setUp(self):
-        self.x = root()
+        self.x = nodes()
 
     def test_find_closest_empty(self):
         parent, subkeys = self.x.find_closest(['a', 'aa', 'aaa'])
@@ -554,49 +554,29 @@ class TestTopicNode(unittest.TestCase):
     def test_init_error(self):
         self.assertRaises(TypeError, topic_node)
 
-class service(object):
+class provider(object):
     def __init__(self):
         self.endpoints = set()
-        self.root = root()
+        self.nodes = nodes()
 
     def create_endpoint(self, endpoint):
         self.endpoints.add(endpoint)
 
     def delete_endpoint(self, endpoint):
-        # TODO: remove subscriptions
         self.endpoints.remove(endpoint)
 
+    def get_node(self, topic):
+        return self.nodes.get_node(topic.name)
+
     def create_node(self, topic):
-        return self.root.create_node(topic.name)
+        return self.nodes.create_node(topic.name)
 
     def delete_node(self, topic):
-        return self.root.delete_node(topic.name)
-        # TODO: remove subscriptions
+        return self.nodes.delete_node(topic.name)
 
-    def publish(self, topic, publishment, endpoint):
-        s = self.create_node(topic)
-        if not s.data:
-            s.data = topic_node(topic)
-
-        return s.data.publish(publishment, endpoint)
-
-    def subscribe(self, topic, endpoint):
-        s = self.create_node(topic)
-        if not s.data:
-            s.data = topic_node(topic)
-
-        return s.data.subscribe(endpoint)
-
-    def read(self, topic, endpoint):
-        s = self.create_node(topic)
-        if not s.data:
-            return None
-
-        return s.data.read(endpoint)
-
-class TestService(unittest.TestCase):
+class TestProvider(unittest.TestCase):
     def setUp(self):
-        self.s = service()
+        self.s = provider()
 
         self.mike = endpoint(perm(gid='user', uid='mike'))
         self.s.create_endpoint(self.mike)
@@ -608,12 +588,61 @@ class TestService(unittest.TestCase):
         self.blog = topic('blog', perm(gid='user', uid='mike'))
 
     def test_create_node(self):
-        s = service()
+        s = provider()
         s.create_node(topic('a.aa.aaa'))
         s.create_node(topic('b.ba.baa.baaa'))
         s.create_node(topic('b.ba.bab.baba'))
-        l = [n for n in s.root.root.prefix()]
+        l = [n for n in s.nodes.root.prefix()]
         self.assertEqual(10, len(l))
+
+    def test_delete_endpoint(self):
+        self.s.delete_endpoint(self.mike)
+        self.s.delete_endpoint(self.chloe)
+
+class service(object):
+    def __init__(self):
+        self.provider = provider()
+
+    def register(self, endpoint):
+        self.provider.create_endpoint(endpoint)
+
+    def unregister(self, endpoint):
+        self.provider.delete_endpoint(endpoint)
+        # TODO: Remove subscriptions
+
+    def publish(self, topic, publishment, endpoint):
+        n = self.provider.create_node(topic)
+        if not n.data:
+            n.data = topic_node(topic)
+
+        return n.data.publish(publishment, endpoint)
+
+    def subscribe(self, topic, endpoint):
+        n = self.provider.create_node(topic)
+        if not n.data:
+            n.data = topic_node(topic)
+
+        return n.data.subscribe(endpoint)
+
+    def read(self, topic, endpoint):
+        n = self.provider.get_node(topic)
+        if not n:
+            return None
+
+        return n.data.read(endpoint)
+
+class TestService(unittest.TestCase):
+    def setUp(self):
+        self.s = service()
+
+        self.mike = endpoint(perm(gid='user', uid='mike'))
+        self.s.register(self.mike)
+
+        self.chloe = endpoint(perm(gid='admin', uid='chloe'))
+        self.s.register(self.chloe)
+
+        self.ta = topic('status', perm(gid='admin'), perm(gid='admin'))
+        self.blog = topic('blog', perm(gid='user', uid='mike'))
 
     def test_prepublish(self):
         self.s.publish(topic=self.blog, publishment=publishment('version0'), endpoint=self.mike)
@@ -644,8 +673,8 @@ class TestService(unittest.TestCase):
         self.assertEqual('version3', self.s.read(topic=self.blog, endpoint=self.chloe).content)
 
     def test_delete_endpoint(self):
-        self.s.delete_endpoint(self.mike)
-        self.s.delete_endpoint(self.chloe)
+        self.s.unregister(self.mike)
+        self.s.unregister(self.chloe)
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
@@ -654,11 +683,11 @@ if __name__ == '__main__':
     s = service()
 
     mike = endpoint(perm=perm(gid='user', uid='mike'))
-    s.create_endpoint(mike)
+    s.register(mike)
     print('endpoint', str(mike))
 
     chloe = endpoint(perm=perm(gid='admin', uid='chloe'))
-    s.create_endpoint(chloe)
+    s.register(chloe)
     print('endpoint', str(chloe))
 
     blog = topic(name='blog', from_perm=perm(gid='user', uid='mike'))
