@@ -34,24 +34,6 @@ class TestIsSeqOrSet(unittest.TestCase):
 class node(object):
     SEPARATOR = '.'
 
-    def __init__(self, key, parent=None):
-        self.key = key
-        self.parent = parent
-        if self.parent:
-            self.parent.add_child(self)
-        self.children = {}
-        self.data = None
-
-    def delete(self):
-        if self.parent:
-            self.parent.remove_child(self)
-
-    def add_child(self, child):
-        self.children[child.key] = child
-
-    def remove_child(self, child):
-        del self.children[child.key]
-
     def check_keys(keys):
         if isinstance(keys, str):
             return keys.split(node.SEPARATOR)
@@ -62,6 +44,49 @@ class node(object):
             return list(keys)
 
         return keys
+
+    def __init__(self, key, parent=None, data=None, owner=None):
+        self.key = key
+
+        self.parent = parent
+        if self.parent:
+            self.parent.children[self.key] = self
+
+        self.children = {}
+
+        self.data = data
+        self.owner = owner
+
+    def delete(self):
+        if self.parent:
+            del self.parent.children[self.key]
+
+    def create_child(self, keys):
+        if not keys:
+            return self
+
+        # Find the closest existing node.
+        n, subkeys = self.find_closest(keys)
+
+        # Create new nodes.
+        for subkey in subkeys:
+            n = node(subkey, n)
+
+        # Return the new child.
+        return n
+
+    def delete_child(self, keys):
+        # Find the child.
+        n = self.get_node(keys)
+
+        # If the child does not exist, fail.
+        if not n:
+            return None
+
+        n.delete()
+
+        # Return the deleted child.
+        return n
 
     def find_closest(self, keys):
         if not keys:
@@ -78,7 +103,19 @@ class node(object):
         except KeyError:
             pass
 
+        # Return the closest and the remaining keys.
         return s, keys
+
+    def has_node(self, keys):
+        parent, subkeys = self.find_closest(keys)
+        return not len(subkeys)
+
+    def get_node(self, keys):
+        parent, subkeys = self.find_closest(keys)
+        if not len(subkeys):
+            return parent
+
+        return None
 
     def ancestors(self):
         if self.parent:
@@ -127,18 +164,6 @@ class TestNode(unittest.TestCase):
         s = node('key')
         self.assertEqual('key', s.key)
         self.assertIsNone(s.parent)
-        self.assertEqual(0, len(s.children))
-
-    def test_init_add(self):
-        s = node('')
-        s.add_child(node(''))
-        self.assertEqual(1, len(s.children))
-
-    def test_init_remove(self):
-        s = node('')
-        c = node('')
-        s.add_child(c)
-        s.remove_child(c)
         self.assertEqual(0, len(s.children))
 
     def test_check_keys_tuple(self):
@@ -223,97 +248,65 @@ class TestNode(unittest.TestCase):
         self.assertEqual(11, len(l))
         self.assertEqual(self.r, l[-1])
 
-class nodes(object):
-    def __init__(self):
-        self.root = node('<root>')
+    def test_has_node_true(self):
+        self.assertTrue(self.r.has_node(['a', 'ab', 'aba', 'abaa']))
 
-    def find_closest(self, keys):
-        return self.root.find_closest(keys)
+    def test_has_node_false(self):
+        self.assertFalse(self.r.has_node(['a', 'ab', 'aba', 'abaa', 'xxxxx']))
 
-    def has_node(self, keys):
-        parent, subkeys = self.root.find_closest(keys)
-        return not len(subkeys)
+    def test_get_node_true(self):
+        self.assertEqual(self.abaa, self.r.get_node(['a', 'ab', 'aba', 'abaa']))
 
-    def get_node(self, keys):
-        parent, subkeys = self.root.find_closest(keys)
-        if not len(subkeys):
-            return parent
-
-        return None
-
-    def create_node(self, keys):
-        if not keys:
-            return self.root
-
-        # Find the closest existing node.
-        s, subkeys = self.root.find_closest(keys)
-
-        # Create new nodes.
-        for subkey in subkeys:
-            s = node(subkey, s)
-
-        return s
-
-    def delete_node(self, keys):
-        s = self.get_node(keys)
-        if not s:
-            return None
-
-        s.delete()
-
-        return s
-
-class TestNodes(unittest.TestCase):
-    def setUp(self):
-        self.x = nodes()
+    def test_get_node_false(self):
+        self.assertIsNone(self.r.get_node(['a', 'ab', 'aba', 'abaa', 'xxxxx']))
 
     def test_find_closest_empty(self):
-        parent, subkeys = self.x.find_closest(['a', 'aa', 'aaa'])
-        self.assertEqual(self.x.root, parent)
+        n = node(key='')
+        parent, subkeys = n.find_closest(['a', 'aa', 'aaa'])
+        self.assertEqual(n, parent)
         self.assertEqual(3, len(subkeys))
 
     def test_create(self):
-        a = self.x.create_node(['a'])
+        n = node(key='')
+        a = n.create_child(['a'])
         self.assertEqual('a', a.key)
-        self.assertEqual(self.x.root, a.parent)
+        self.assertEqual(n, a.parent)
 
-        aa = self.x.create_node(['a', 'aa'])
+        aa = n.create_child(['a', 'aa'])
         self.assertEqual('aa', aa.key)
         self.assertEqual(a, aa.parent)
 
     def test_has_node(self):
         # setup
-        a = self.x.create_node(['a'])
-        aa = self.x.create_node(['a', 'aa'])
+        n = node(key='')
+        a = n.create_child(['a'])
+        aa = n.create_child(['a', 'aa'])
 
-        self.assertTrue(self.x.has_node(['a']))
-        self.assertTrue(self.x.has_node(['a', 'aa']))
-        self.assertFalse(self.x.has_node(['a', 'aa', 'aaa']))
+        self.assertTrue(n.has_node(['a']))
+        self.assertTrue(n.has_node(['a', 'aa']))
+        self.assertFalse(n.has_node(['a', 'aa', 'aaa']))
 
     def test_has_node(self):
         # setup
-        a = self.x.create_node(['a'])
-        aa = self.x.create_node(['a', 'aa'])
+        n = node(key='')
+        a = n.create_child(['a'])
+        aa = n.create_child(['a', 'aa'])
 
-        self.assertEqual(a, self.x.get_node(['a']))
-        self.assertEqual(aa, self.x.get_node(['a', 'aa']))
-        self.assertIsNone(self.x.get_node(['a', 'aa', 'aaa']))
+        self.assertEqual(a, n.get_node(['a']))
+        self.assertEqual(aa, n.get_node(['a', 'aa']))
+        self.assertIsNone(n.get_node(['a', 'aa', 'aaa']))
 
     def test_delete(self):
         # setup
-        a = self.x.create_node(['a'])
-        aa = self.x.create_node(['a', 'aa'])
+        n = node(key='')
+        a = n.create_child(['a'])
+        aa = n.create_child(['a', 'aa'])
 
-        self.assertIsNone(self.x.delete_node(['a', 'aa', 'aaa']))
-        self.assertEqual(aa, self.x.delete_node(['a', 'aa']))
-        self.assertIsNone(self.x.delete_node(['a', 'aa']))
-        self.assertEqual(a, self.x.delete_node(['a']))
-        self.assertIsNone(self.x.delete_node(['a']))
-
-
-
-
-
+        self.assertIsNone(n.delete_child(['a', 'aa', 'aaa']))
+        self.assertEqual(aa, n.delete_child(['a', 'aa']))
+        self.assertIsNone(n.delete_child(['a', 'aa']))
+        self.assertEqual(a, n.delete_child(['a']))
+        self.assertIsNone(n.delete_child(['a']))
 
 
 
@@ -557,7 +550,7 @@ class TestTopicNode(unittest.TestCase):
 class provider(object):
     def __init__(self):
         self.endpoints = set()
-        self.nodes = nodes()
+        self.root = node('<root>')
 
     def create_endpoint(self, endpoint):
         self.endpoints.add(endpoint)
@@ -566,13 +559,13 @@ class provider(object):
         self.endpoints.remove(endpoint)
 
     def get_node(self, topic):
-        return self.nodes.get_node(topic.name)
+        return self.root.get_node(topic.name)
 
     def create_node(self, topic):
-        return self.nodes.create_node(topic.name)
+        return self.root.create_child(topic.name)
 
     def delete_node(self, topic):
-        return self.nodes.delete_node(topic.name)
+        return self.root.delete_child(topic.name)
 
 class TestProvider(unittest.TestCase):
     def setUp(self):
@@ -592,7 +585,7 @@ class TestProvider(unittest.TestCase):
         s.create_node(topic('a.aa.aaa'))
         s.create_node(topic('b.ba.baa.baaa'))
         s.create_node(topic('b.ba.bab.baba'))
-        l = [n for n in s.nodes.root.prefix()]
+        l = [n for n in s.root.prefix()]
         self.assertEqual(10, len(l))
 
     def test_delete_endpoint(self):
