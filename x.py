@@ -39,9 +39,6 @@ class node(object):
             return keys.split(node.SEPARATOR)
         elif not hasattr(keys, '__iter__'):
             raise TypeError('invalid keys')
-        elif not hasattr(keys, 'pop'):
-            # If keys is iter-able, but not pop-able, then convert it into a list.
-            return list(keys)
 
         return keys
 
@@ -104,7 +101,7 @@ class node(object):
         if not keys:
             return self, ()
 
-        keys = node.check_keys(keys)
+        keys = list(node.check_keys(keys))
 
         try:
             s = self
@@ -206,7 +203,7 @@ class TestNode(unittest.TestCase):
 
     def test_check_keys_tuple(self):
         keys = node.check_keys(('a', 'aa', 'aaa'))
-        self.assertTrue(isinstance(keys, list))
+        self.assertTrue(hasattr(keys, '__iter__'))
 
     def test_check_keys_list(self):
         keys = node.check_keys(['a', 'aa', 'aaa'])
