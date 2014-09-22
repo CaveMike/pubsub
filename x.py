@@ -550,6 +550,9 @@ class perm(object):
         self.gid = set(gid)
         self.uid = uid
 
+    def to_perms(self):
+        return {'c' : self, 'd' : self, 'r' : self, 'w' : self}
+
     def __call__(self, perm=None):
         logger.debug('self=' + str(self) + ', them=' + str(perm))
         if not perm:
@@ -646,24 +649,29 @@ class TestPerm(unittest.TestCase):
         self.assertIsNotNone(repr(p))
 
 class endpoint(object):
-    def __init__(self, perm):
-        self.perm = perm
+    def __init__(self, perm=None, perms=None):
+        if perms is not None:
+            self.perms = perms
+        elif perm is not None:
+            self.perms = perm.to_perms()
+        else:
+            raise TypeError('specify either perm or perms')
 
     def __call__(self, publishment):
-        logger.info('notified ' + str(self.perm) + ' of content ' + str(publishment))
+        logger.info('notified ' + str(self.perms['r']) + ' of content ' + str(publishment))
 
     def __str__(self):
-        return str(self.perm)
+        return str(self.perms['r'])
 
     def __repr__(self):
-        return 'perm=' + repr(self.perm)
+        return 'perm=' + repr(self.perms['r'])
 
 class TestEndpoint(unittest.TestCase):
     def test_init_error(self):
         self.assertRaises(TypeError, endpoint)
 
     def test_call(self):
-        e = endpoint(perm=())
+        e = endpoint(perm())
         p = publishment(content='content')
         e(p)
 
@@ -745,9 +753,8 @@ class TestProvider(unittest.TestCase):
         self.s.delete_endpoint(self.chloe)
 
 class service(object):
-    def __init__(self):
-    #{'r' : perm(gid=('admin', 'user'))}
-        self.provider = provider(perms=None)
+    def __init__(self, perms):
+        self.provider = provider(perms=perms)
 
     def register(self, endpoint):
         self.provider.create_endpoint(endpoint)
@@ -757,26 +764,26 @@ class service(object):
         # TODO: Remove subscriptions
 
     def publish(self, topic, publishment, endpoint):
-        perms={'w' : endpoint.perm, 'r' : endpoint.perm}
-        n = self.provider.create_node(topic, perms=perms)
-        return n.publish(publishment=publishment, perms=perms)
+        n = self.provider.create_node(topic, perms=endpoint.perms)
+        return n.publish(publishment=publishment, perms=endpoint.perms)
 
     def subscribe(self, topic, endpoint):
-        n = self.provider.create_node(topic, perms={'r' : endpoint.perm})
-        return n.subscribe(endpoint=endpoint, perms={'r' : endpoint.perm})
+        n = self.provider.create_node(topic, perms=endpoint.perms)
+        return n.subscribe(endpoint=endpoint, perms=endpoint.perms)
 
     def read(self, topic, endpoint):
-        perms={'r' : endpoint.perm}
-        n = self.provider.get_node(topic, perms=perms)
+        n = self.provider.get_node(topic, perms=endpoint.perms)
         if not n:
             return None
 
         # TODO: Is this supposed to notify the endpoint?
-        return n.read(perms=perms)
+        return n.read(perms=endpoint.perms)
 
 class TestService(unittest.TestCase):
     def setUp(self):
-        self.s = service()
+        p = perm(gid=('admin', 'user'))
+        perms = p.to_perms()
+        self.s = service(perms)
 
         self.mike = endpoint(perm(gid='user', uid='mike'))
         self.s.register(self.mike)
@@ -845,7 +852,9 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger('pubsub')
 
-    s = service()
+    p = perm(gid=('admin', 'user'))
+    perms = p.to_perms()
+    s = service(perms)
 
     mike = endpoint(perm=perm(gid='user', uid='mike'))
     s.register(mike)
@@ -874,6 +883,8 @@ if __name__ == '__main__':
     unittest.main()
 
 """
+implement proper str and repr
+fix class name cases, function cases
 hierarchy of nodes (nested subscriptions)
 manage endpoint lifetimes
 should pubs just have one gid?
