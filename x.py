@@ -31,17 +31,54 @@ class TestIsSeqOrSet(unittest.TestCase):
     def test_set_strings(self):
         self.assertTrue(is_sequence_or_set(set(('test0', 'test1'))))
 
-class node(object):
+class key(object):
     SEPARATOR = '.'
 
-    def check_keys(keys):
-        if isinstance(keys, str):
-            return keys.split(node.SEPARATOR)
-        elif not hasattr(keys, '__iter__'):
-            raise TypeError('invalid keys')
+    def __init__(self, value):
+        if isinstance(value, str):
+            # If it is a string, split into a list of substrings.
+            self.value = value.split(key.SEPARATOR)
+        elif not hasattr(value, '__iter__'):
+            # If it not iter-able, then this cannot be a key.
+            raise TypeError('invalid type')
+        else:
+            self.value = value
 
-        return keys
+    def __iter__(self):
+        return self.value.__iter__()
 
+    def __getitem__(self, index):
+        return self.value.__getitem__(index)
+
+class TestKey(unittest.TestCase):
+    def test_init_tuple(self):
+        keys = key(('a', 'aa', 'aaa'))
+        self.assertTrue(hasattr(keys, '__iter__'))
+
+    def test_init_list(self):
+        keys = key(['a', 'aa', 'aaa'])
+        self.assertTrue(hasattr(keys, '__iter__'))
+
+    def test_init_string(self):
+        keys = key('a.aa.aaa')
+        self.assertTrue(hasattr(keys, '__iter__'))
+
+    def test_init_none(self):
+        self.assertRaises(TypeError, key.__init__, None)
+
+    def test_init_int(self):
+        self.assertRaises(TypeError, key.__init__, 1)
+
+class node(object):
+    """
+        A node uses the following objects:
+          - A key object that must implement an __inter__() function that returns each
+            subkey in order from top to bottom.
+          - A permission object that must implement a __call__() function that takes
+            another permission to validate.  It returns True if the permission check
+            passes, False otherwise.
+          - An owner object that must implement __eq__().
+    """
     def __init__(self, key, parent=None, data=None, owner=None):
         """
         Create a node.  If a parent is specified, link the parent and child nodes.
@@ -101,7 +138,7 @@ class node(object):
         if not keys:
             return self, ()
 
-        keys = list(node.check_keys(keys))
+        keys = list(keys)
 
         try:
             s = self
@@ -174,7 +211,7 @@ class node(object):
     def __repr__(self):
         return 'key=' + repr(self.key) + \
             ', parent=' + repr(self.parent) + \
-            ', children=' + repr(self.children) + \
+            ', children=' + repr(len(self.children)) + \
             ', data=' + repr(self.data) + \
             ', owner=' + repr(self.owner)
 
@@ -201,24 +238,6 @@ class TestNode(unittest.TestCase):
         self.assertIsNone(s.parent)
         self.assertEqual(0, len(s.children))
 
-    def test_check_keys_tuple(self):
-        keys = node.check_keys(('a', 'aa', 'aaa'))
-        self.assertTrue(hasattr(keys, '__iter__'))
-
-    def test_check_keys_list(self):
-        keys = node.check_keys(['a', 'aa', 'aaa'])
-        self.assertTrue(isinstance(keys, list))
-
-    def test_check_keys_none(self):
-        self.assertRaises(TypeError, node.check_keys, None)
-
-    def test_check_keys_int(self):
-        self.assertRaises(TypeError, node.check_keys, 1)
-
-    def test_check_keys_string(self):
-        keys = node.check_keys('a.aa.aaa')
-        self.assertTrue(isinstance(keys, list))
-
     def test_get_by_none(self):
         s, subkeys = self.r.find_closest_child(None)
         self.assertEqual(self.r, s)
@@ -230,7 +249,7 @@ class TestNode(unittest.TestCase):
         self.assertEqual(0, len(subkeys))
 
     def test_get_by_string(self):
-        s, subkeys = self.r.find_closest_child('a.ab.aba.abaa')
+        s, subkeys = self.r.find_closest_child(key('a.ab.aba.abaa'))
         self.assertEqual(self.abaa, s)
 
     def test_get_by_sequence(self):
@@ -243,7 +262,7 @@ class TestNode(unittest.TestCase):
         self.assertEqual(0, len(subkeys))
 
     def test_get_by_string_missing(self):
-        s, subkeys = self.r.find_closest_child('a.ab.aba.abaa.abaaa')
+        s, subkeys = self.r.find_closest_child(key('a.ab.aba.abaa.abaaa'))
         self.assertEqual(self.abaa, s)
         self.assertEqual(1, len(subkeys))
 
@@ -364,7 +383,7 @@ class perm(object):
         self.gid = set(gid)
         self.uid = uid
 
-    def has_permission(self, perm=None):
+    def __call__(self, perm=None):
         if not perm and (self.gid or self.uid):
             return False
 
@@ -418,27 +437,27 @@ class TestPerm(unittest.TestCase):
 
     def test_has_perm_none(self):
         p = perm(gid='gid0', uid='uid0')
-        self.assertFalse(p.has_permission())
+        self.assertFalse(p())
 
     def test_has_perm_empty(self):
         p = perm(gid='gid0', uid='uid0')
-        self.assertFalse(p.has_permission(perm()))
+        self.assertFalse(p(perm()))
 
     def test_has_perm_both(self):
         p = perm(gid='gid0', uid='uid0')
-        self.assertTrue(p.has_permission(perm(gid='gid0', uid='uid0')))
+        self.assertTrue(p(perm(gid='gid0', uid='uid0')))
 
     def test_has_perm_both2(self):
         p = perm(gid='gid0', uid='uid0')
-        self.assertTrue(p.has_permission(perm(gid=('gid0', 'gid1'), uid='uid0')))
+        self.assertTrue(p(perm(gid=('gid0', 'gid1'), uid='uid0')))
 
     def test_has_perm_gid_only(self):
         p = perm(gid='gid0', uid='uid0')
-        self.assertFalse(p.has_permission(perm(gid='gid0')))
+        self.assertFalse(p(perm(gid='gid0')))
 
     def test_has_perm_uid_only(self):
         p = perm(gid='gid0', uid='uid0')
-        self.assertFalse(p.has_permission(perm(uid='uid0')))
+        self.assertFalse(p(perm(uid='uid0')))
 
     def test_str(self):
         p = perm(gid='gid0', uid='uid0')
@@ -477,10 +496,10 @@ class topic(object):
         self.to_perm = to_perm
 
     def can_publish(self, from_perm=perm()):
-        return self.from_perm.has_permission(from_perm)
+        return self.from_perm(from_perm)
 
     def can_subscribe(self, to_perm=perm()):
-        return self.to_perm.has_permission(to_perm)
+        return self.to_perm(to_perm)
 
     def __str__(self):
         return str(self.name) + '-' + str(self.from_perm) + '-' + str(self.to_perm)
@@ -567,7 +586,7 @@ class topic_node(object):
         return self.publishments[-1]
 
     def notify(self, subscription, publishment):
-        if not self.topic.to_perm.has_permission(subscription.perm):
+        if not self.topic.to_perm(subscription.perm):
             raise PermissionError('notify failed, topic perm=' + str(self.topic.to_perm) + ', endpoint perm=' + str(subscription.perm))
 
         subscription(publishment)
@@ -617,9 +636,9 @@ class TestProvider(unittest.TestCase):
 
     def test_create_node(self):
         s = provider()
-        s.create_node(topic('a.aa.aaa'))
-        s.create_node(topic('b.ba.baa.baaa'))
-        s.create_node(topic('b.ba.bab.baba'))
+        s.create_node(topic(key('a.aa.aaa')))
+        s.create_node(topic(key('b.ba.baa.baaa')))
+        s.create_node(topic(key('b.ba.bab.baba')))
         l = [n for n in s.root.prefix()]
         self.assertEqual(10, len(l))
 
