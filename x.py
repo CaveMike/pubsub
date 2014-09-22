@@ -2,6 +2,9 @@
 import logging
 import unittest
 
+def nestedproperty(c):
+    return c()
+
 def is_sequence(arg):
     return not hasattr(arg, 'strip') and hasattr(arg, '__getitem__') and hasattr(arg, '__iter__')
 
@@ -79,7 +82,7 @@ class node(object):
             passes, False otherwise.
           - An owner object that must implement __eq__().
     """
-    def __init__(self, key, parent=None, data=None, owner=None):
+    def __init__(self, key, parent=None, owner=None):
         """
         Create a node.  If a parent is specified, link the parent and child nodes.
         """
@@ -91,7 +94,7 @@ class node(object):
 
         self.children = {}
 
-        self.data = data
+        self.__data__ = None
         self.owner = owner
 
     def delete(self):
@@ -204,6 +207,18 @@ class node(object):
         """
         yield from self.descendants()
         yield self
+
+    @nestedproperty
+    def data():
+        doc = "data property"
+        def fget(self):
+            return self.__data__
+
+        def fset(self, value):
+            self.__data__ = value
+
+        return property(fget, fset, None, doc)
+
 
     def __str__(self):
         return 'key=' + str(self.key)
