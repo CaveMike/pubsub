@@ -768,7 +768,11 @@ class service(object):
         return n.publish(publishment=publishment, perms=endpoint.perms)
 
     def subscribe(self, topic, endpoint):
-        n = self.provider.create_node(topic, perms=endpoint.perms)
+        n = self.provider.get_node(topic, perms=endpoint.perms)
+        if not n:
+            # FIXME: raise an error?  should we be allowed to subscribe before a node is published to?
+            return
+
         return n.subscribe(endpoint=endpoint, perms=endpoint.perms)
 
     def read(self, topic, endpoint):
