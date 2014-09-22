@@ -2,38 +2,8 @@
 import logging
 import unittest
 import itertools
-
-def nestedproperty(c):
-    return c()
-
-def is_sequence(arg):
-    return not hasattr(arg, 'strip') and hasattr(arg, '__getitem__') and hasattr(arg, '__iter__')
-
-class TestIsSeq(unittest.TestCase):
-    def test_string(self):
-        self.assertFalse(is_sequence('test'))
-
-    def test_tuple_string(self):
-        self.assertTrue(is_sequence(('test', )))
-
-    def test_tuple_strings(self):
-        self.assertTrue(is_sequence(('test0', 'test1')))
-
-    def test_list_string(self):
-        self.assertTrue(is_sequence(['test', ]))
-
-    def test_list_strings(self):
-        self.assertTrue(is_sequence(['test0', 'test1']))
-
-def is_sequence_or_set(arg):
-    return isinstance(arg, set) or is_sequence(arg)
-
-class TestIsSeqOrSet(unittest.TestCase):
-    def test_set_string(self):
-        self.assertTrue(is_sequence_or_set(set('test', )))
-
-    def test_set_strings(self):
-        self.assertTrue(is_sequence_or_set(set(('test0', 'test1'))))
+#from carbon.helpers import nestedproperty
+from carbon.helpers import is_sequence_or_set
 
 class key(object):
     SEPARATOR = '.'
@@ -504,16 +474,16 @@ class tnode(node):
 
     def __init__(self, key, parent=None, perms=None, data=None, *args, **kwargs):
         super(tnode, self).__init__(key=key, parent=parent, perms=perms, data=data, args=args, kwargs=kwargs)
-        self.publishments = []
+        self.publications = []
         self.subscriptions = []
 
-    def publish(self, publishment, perms=None):
+    def publish(self, publication, perms=None):
         self.check_permission('w', perms)
 
-        self.publishments.append(publishment)
+        self.publications.append(publication)
 
         for subscription in self.subscriptions:
-            self.notify(subscription, publishment)
+            self.notify(subscription, publication)
 
     def subscribe(self, endpoint, perms=None):
         self.check_permission('r', perms)
@@ -529,14 +499,14 @@ class tnode(node):
     def latest(self, perms=None):
         self.check_permission('r', perms)
 
-        if not self.publishments:
+        if not self.publications:
             return None
 
-        return self.publishments[-1]
+        return self.publications[-1]
 
-    def notify(self, subscription, publishment):
+    def notify(self, subscription, publication):
         # TODO: apply to-filter
-        subscription(publishment)
+        subscription(publication)
 
 
 
@@ -657,8 +627,8 @@ class endpoint(object):
         else:
             raise TypeError('specify either perm or perms')
 
-    def __call__(self, publishment):
-        logger.info('notified ' + str(self.perms['r']) + ' of content ' + str(publishment))
+    def __call__(self, publication):
+        logger.info('notified ' + str(self.perms['r']) + ' of content ' + str(publication))
 
     def __str__(self):
         return str(self.perms['r'])
@@ -672,10 +642,10 @@ class TestEndpoint(unittest.TestCase):
 
     def test_call(self):
         e = endpoint(perm())
-        p = publishment(content='content')
+        p = publication(content='content')
         e(p)
 
-class publishment(object):
+class publication(object):
     def __init__(self, content, ttl=None):
         self.content = content
         self.ttl = ttl
@@ -688,23 +658,23 @@ class publishment(object):
 
 class TestPublishment(unittest.TestCase):
     def test_init_error(self):
-        self.assertRaises(TypeError, publishment)
+        self.assertRaises(TypeError, publication)
 
     def test_init_content(self):
-        p = publishment(content='content')
+        p = publication(content='content')
         self.assertIsNotNone(p.content)
 
     def test_init_both(self):
-        p = publishment(content='content', ttl=12)
+        p = publication(content='content', ttl=12)
         self.assertIsNotNone(p.content)
         self.assertEqual(12, p.ttl)
 
     def test_str(self):
-        p = publishment(content='content', ttl=12)
+        p = publication(content='content', ttl=12)
         self.assertIsNotNone(str(p))
 
     def test_repr(self):
-        p = publishment(content='content', ttl=12)
+        p = publication(content='content', ttl=12)
         self.assertIsNotNone(repr(p))
 
 class provider(object):
@@ -763,14 +733,14 @@ class service(object):
         self.provider.delete_endpoint(endpoint)
         # TODO: Remove subscriptions
 
-    def publish(self, topic, publishment, endpoint, perms=None):
+    def publish(self, topic, publication, endpoint, perms=None):
         n = self.provider.get_node(topic, perms=endpoint.perms)
         if not n:
             if not perms:
                 perms = endpoint.perms
             n = self.provider.create_node(topic, perms=perms)
 
-        return n.publish(publishment=publishment, perms=endpoint.perms)
+        return n.publish(publication=publication, perms=endpoint.perms)
 
     def subscribe(self, topic, endpoint):
         n = self.provider.get_node(topic, perms=endpoint.perms)
@@ -804,7 +774,7 @@ class TestService(unittest.TestCase):
         self.blog = 'blog'
 
     def test_prepublish(self):
-        self.s.publish(topic=self.blog, publishment=publishment('version0'), endpoint=self.mike)
+        self.s.publish(topic=self.blog, publication=publication('version0'), endpoint=self.mike)
 
     def test_subscribe(self):
         self.assertRaises(PermissionError, subscription=self.s.subscribe, topic=self.ta, endpoint=self.mike)
@@ -815,44 +785,44 @@ class TestService(unittest.TestCase):
     def test_publish0(self):
         p = perm(gid=('admin', ))
         perms = p.to_perms()
-        self.s.publish(topic=self.ta, publishment=publishment('admin version1'), endpoint=self.chloe, perms=perms)
-        self.assertRaises(PermissionError, self.s.publish, topic=self.ta, publishment=publishment('fails'), endpoint=self.mike)
+        self.s.publish(topic=self.ta, publication=publication('admin version1'), endpoint=self.chloe, perms=perms)
+        self.assertRaises(PermissionError, self.s.publish, topic=self.ta, publication=publication('fails'), endpoint=self.mike)
 
     def test_publish1(self):
-        self.s.publish(topic=self.ta, publishment=publishment('admin version1'), endpoint=self.chloe)
+        self.s.publish(topic=self.ta, publication=publication('admin version1'), endpoint=self.chloe)
 
     def test_publish2(self):
-        self.s.publish(topic=self.blog, publishment=publishment('version1'), endpoint=self.mike)
-        self.s.publish(topic=self.blog, publishment=publishment('version2'), endpoint=self.mike)
-        self.s.publish(topic=self.blog, publishment=publishment('version3'), endpoint=self.mike)
+        self.s.publish(topic=self.blog, publication=publication('version1'), endpoint=self.mike)
+        self.s.publish(topic=self.blog, publication=publication('version2'), endpoint=self.mike)
+        self.s.publish(topic=self.blog, publication=publication('version3'), endpoint=self.mike)
 
     def test_publish3(self):
-        self.s.publish(topic=self.blog, publishment=publishment('fails'), endpoint=self.chloe)
+        self.s.publish(topic=self.blog, publication=publication('fails'), endpoint=self.chloe)
 
     def test_read0(self):
-        self.s.publish(topic=self.ta, publishment=publishment('admin version1'), endpoint=self.chloe)
+        self.s.publish(topic=self.ta, publication=publication('admin version1'), endpoint=self.chloe)
 
     def test_read1(self):
-        self.s.publish(topic=self.ta, publishment=publishment('admin version1'), endpoint=self.chloe)
+        self.s.publish(topic=self.ta, publication=publication('admin version1'), endpoint=self.chloe)
         self.assertEqual('admin version1', self.s.read(topic=self.ta, endpoint=self.chloe).content)
 
     def test_read2(self):
-        self.s.publish(topic=self.blog, publishment=publishment('version1'), endpoint=self.mike)
-        self.s.publish(topic=self.blog, publishment=publishment('version2'), endpoint=self.mike)
-        self.s.publish(topic=self.blog, publishment=publishment('version3'), endpoint=self.mike)
+        self.s.publish(topic=self.blog, publication=publication('version1'), endpoint=self.mike)
+        self.s.publish(topic=self.blog, publication=publication('version2'), endpoint=self.mike)
+        self.s.publish(topic=self.blog, publication=publication('version3'), endpoint=self.mike)
         self.assertEqual('version3', self.s.read(topic=self.blog, endpoint=self.mike).content)
         self.assertEqual('version3', self.s.read(topic=self.blog, endpoint=self.chloe).content)
 
     def test_read3(self):
-        self.s.publish(topic=self.blog, publishment=publishment('version1'), endpoint=self.mike)
-        self.s.publish(topic=self.blog, publishment=publishment('version2'), endpoint=self.mike)
-        self.s.publish(topic=self.blog, publishment=publishment('version3'), endpoint=self.mike)
+        self.s.publish(topic=self.blog, publication=publication('version1'), endpoint=self.mike)
+        self.s.publish(topic=self.blog, publication=publication('version2'), endpoint=self.mike)
+        self.s.publish(topic=self.blog, publication=publication('version3'), endpoint=self.mike)
         self.assertEqual('version3', self.s.read(topic=self.blog, endpoint=self.chloe).content)
 
     def test_read(self):
         p = perm(gid=('admin', ))
         perms = p.to_perms()
-        self.s.publish(topic=self.ta, publishment=publishment('admin version1'), endpoint=self.chloe, perms=perms)
+        self.s.publish(topic=self.ta, publication=publication('admin version1'), endpoint=self.chloe, perms=perms)
         self.assertRaises(PermissionError, self.s.read, topic=self.ta, endpoint=self.mike)
 
     def test_delete_endpoint(self):
@@ -879,16 +849,16 @@ if __name__ == '__main__':
     print('topic', str(blog))
 
     print('pre-publish')
-    s.publish(topic=blog, publishment=publishment('version0'), endpoint=mike)
+    s.publish(topic=blog, publication=publication('version0'), endpoint=mike)
 
     print('subscribe')
     s.subscribe(topic=blog, endpoint=mike)
     s.subscribe(topic=blog, endpoint=chloe)
 
     print('publish')
-    s.publish(topic=blog, publishment=publishment('version1'), endpoint=mike)
-    s.publish(topic=blog, publishment=publishment('version2'), endpoint=mike)
-    s.publish(topic=blog, publishment=publishment('version3'), endpoint=mike)
+    s.publish(topic=blog, publication=publication('version1'), endpoint=mike)
+    s.publish(topic=blog, publication=publication('version2'), endpoint=mike)
+    s.publish(topic=blog, publication=publication('version3'), endpoint=mike)
 
     logger.setLevel(level=logging.WARNING)
     unittest.main()
@@ -900,7 +870,6 @@ hierarchy of nodes (nested subscriptions)
 manage endpoint lifetimes
 should pubs just have one gid?
 support ancestor recursion for notify?
-rename publishment to publication
 
 perm
 
@@ -910,13 +879,13 @@ perms
 endpoint
   perms
 
-publishment
+publication
   content
   ttl
 
 tnode
   node
-  publishments
+  publications
   subscriptions
 
 provider
