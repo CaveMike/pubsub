@@ -763,8 +763,13 @@ class service(object):
         self.provider.delete_endpoint(endpoint)
         # TODO: Remove subscriptions
 
-    def publish(self, topic, publishment, endpoint):
-        n = self.provider.create_node(topic, perms=endpoint.perms)
+    def publish(self, topic, publishment, endpoint, perms=None):
+        n = self.provider.get_node(topic, perms=endpoint.perms)
+        if not n:
+            if not perms:
+                perms = endpoint.perms
+            n = self.provider.create_node(topic, perms=perms)
+
         return n.publish(publishment=publishment, perms=endpoint.perms)
 
     def subscribe(self, topic, endpoint):
@@ -807,10 +812,11 @@ class TestService(unittest.TestCase):
         self.s.subscribe(topic=self.blog, endpoint=self.mike)
         self.s.subscribe(topic=self.blog, endpoint=self.chloe)
 
-# FIXME: test does not fail because both chloe and mike share a gid, user.
-#    def test_publish0(self):
-#        self.s.publish(topic=self.ta, publishment=publishment('admin version1'), endpoint=self.chloe)
-#        self.assertRaises(PermissionError, self.s.publish, topic=self.ta, publishment=publishment('fails'), endpoint=self.mike)
+    def test_publish0(self):
+        p = perm(gid=('admin', ))
+        perms = p.to_perms()
+        self.s.publish(topic=self.ta, publishment=publishment('admin version1'), endpoint=self.chloe, perms=perms)
+        self.assertRaises(PermissionError, self.s.publish, topic=self.ta, publishment=publishment('fails'), endpoint=self.mike)
 
     def test_publish1(self):
         self.s.publish(topic=self.ta, publishment=publishment('admin version1'), endpoint=self.chloe)
@@ -843,10 +849,11 @@ class TestService(unittest.TestCase):
         self.s.publish(topic=self.blog, publishment=publishment('version3'), endpoint=self.mike)
         self.assertEqual('version3', self.s.read(topic=self.blog, endpoint=self.chloe).content)
 
-# FIXME: test does not fail because both chloe and mike share a gid, user.
-#    def test_read(self):
-#        self.s.publish(topic=self.ta, publishment=publishment('admin version1'), endpoint=self.chloe)
-#        self.assertRaises(PermissionError, self.s.read, topic=self.ta, endpoint=self.mike)
+    def test_read(self):
+        p = perm(gid=('admin', ))
+        perms = p.to_perms()
+        self.s.publish(topic=self.ta, publishment=publishment('admin version1'), endpoint=self.chloe, perms=perms)
+        self.assertRaises(PermissionError, self.s.read, topic=self.ta, endpoint=self.mike)
 
     def test_delete_endpoint(self):
         self.s.unregister(self.mike)
@@ -892,28 +899,30 @@ fix class name cases, function cases
 hierarchy of nodes (nested subscriptions)
 manage endpoint lifetimes
 should pubs just have one gid?
+support ancestor recursion for notify?
+rename publishment to publication
+
+perm
 
 perms
   dict of perm (c,d,r,w)
 
 endpoint
-  perm
-
-topic
-  name
-  to
-  from
+  perms
 
 publishment
   content
   ttl
 
-topic_node
-  topic
+tnode
+  node
   publishments
   subscriptions
 
-service
+provider
   endpoints
-  nodes
+  tnodes
+
+service
+  provider
 """
