@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import logging
 import unittest
+import itertools
 
 def nestedproperty(c):
     return c()
@@ -74,17 +75,17 @@ class TestKey(unittest.TestCase):
 
 class node(object):
     """
-        A node uses the following objects:
+        Uses the following objects:
           - A key object that must implement an __inter__() function that returns each
             subkey in order from top to bottom.
           - A permission object that must implement a __call__() function that takes
             another permission to validate.  It returns True if the permission check
             passes, False otherwise.
     """
-    def __create__(key, parent=None):
+    def __create__(key, parent=None, perms=None, data=None, *args, **kwargs):
         return node(key=key, parent=parent)
 
-    def __init__(self, key, parent=None):
+    def __init__(self, key, parent=None, perms=None, data=None, *args, **kwargs):
         """
         Create a node.  If a parent is specified, link the parent and child nodes.
         """
@@ -96,19 +97,59 @@ class node(object):
 
         self.children = {}
 
-        self.__data__ = None
+        self.perms = perms
+        n = self.parent
+        while self.perms is None and n:
+            self.perms = n.perms
+            n = n.parent
 
-    def delete(self):
+        self.data = data
+
+    def has_permission(self, op, perms):
+        """
+        If perm has permission to perform operation, op, on this node, then return True;
+        otherwise return False
+        """
+
+        # This is a special case.  If the caller did not provide permissions, then
+        # permissions are not required.
+        if perms is None:
+            return True
+
+        # If the node does not have permissions, then permissions are not required.
+        if self.perms is None:
+            return True
+
+        # Both sets of permissions must have a permission for the operation.
+        try:
+            thisperm = self.perms[op]
+            thatperm = perms[op]
+        except KeyError:
+            return False
+
+        return thisperm(thatperm)
+
+    def check_permission(self, op, perms):
+        """
+        Throw an exception if perm does not have enough permission to perform the
+        operation, op, on this node.
+        """
+        if not self.has_permission(op, perms):
+            raise PermissionError('check permission failed: op=' + str(op) + ', required perms=' + str(self.perms) + ', request perms=' + str(perms))
+
+    def __delete__(self):
         """
         Delete this node.  If this node has a parent, unlink the parent and child nodes.
         """
         if self.parent:
             del self.parent.children[self.key]
 
-    def create_child(self, keys):
+    def create_child(self, keys, perms=None, *args, **kwargs):
         """
         Create a child node using the specified key.
         """
+        self.check_permission('c', perms)
+
         if not keys:
             return self
 
@@ -117,24 +158,26 @@ class node(object):
 
         # Create new nodes.
         for subkey in subkeys:
-            n = node.__create__(subkey, n)
+            n = node.__create__(subkey, n, args, kwargs)
 
         # Return the new child.
         return n
 
-    def delete_child(self, keys):
+    def delete_child(self, keys, perms=None):
         """
         Delete the child node specified by the key if it exists.
         Return the deleted node if it exists; otherwise return None.
         """
+        self.check_permission('d', perms)
+
         n = self.get_node(keys)
         if not n:
             return None
 
-        n.delete()
+        n.__delete__()
         return n
 
-    def find_closest_child(self, keys):
+    def find_closest_child(self, keys, perms=None):
         """
         Return the child node specified by the key.
         If the node does not exist, return its closest ancestor and the remaining subkeys.
@@ -145,80 +188,95 @@ class node(object):
         keys = list(keys)
 
         try:
-            s = self
+            n = self
             while len(keys):
+                n.check_permission('r', perms)
+
                 subkey = keys[0]
-                s = s.children[subkey]
+                n = n.children[subkey]
                 keys.pop(0)
         except KeyError:
             pass
 
-        return s, keys
+        return n, keys
 
-    def has_node(self, keys):
+    def has_node(self, keys, perms=None):
         """
         If the child node specified by the key exists, return True; otherwise return False.
         """
-        parent, subkeys = self.find_closest_child(keys)
+        parent, subkeys = self.find_closest_child(keys, perms)
         return not len(subkeys)
 
-    def get_node(self, keys):
+    def get_node(self, keys, perms=None):
         """
         Return the child node specified by the key if it exists; otherwise return None.
         """
-        parent, subkeys = self.find_closest_child(keys)
+        parent, subkeys = self.find_closest_child(keys, perms)
         if not len(subkeys):
             return parent
 
         return None
 
-    def ancestors(self):
+    def ancestors(self, perms=None):
         """
         Return an iterator for this nodes ancestors (parent, grandparent, etc.).
         """
-        if self.parent:
-            yield from self.parent.self_and_ancestors()
+        self.check_permission('r', perms)
 
-    def self_and_ancestors(self):
+        if self.parent:
+            yield from self.parent.self_and_ancestors(perms)
+
+    def self_and_ancestors(self, perms=None):
         """
         Return an iterator for this node and its ancestors (self, parent, grandparent, etc.).
         """
-        yield self
-        yield from self.ancestors()
+        self.check_permission('r', perms)
 
-    def descendants(self):
+        yield self
+        yield from self.ancestors(perms)
+
+    def descendants(self, perms=None):
         """
         Return an iterator for this nodes descendants (children, grandchildren, etc.).
         """
-        for key, child in self.children.items():
-            yield from child.prefix()
+        self.check_permission('r', perms)
 
-    def prefix(self):
+        for key, child in self.children.items():
+            yield from child.prefix(perms)
+
+    def prefix(self, perms=None):
         """
         Return an iterator for this node and its descendants (children, grandchildren, etc.)
         with the parent before the children (prefix).
         """
-        yield self
-        yield from self.descendants()
+        self.check_permission('r', perms)
 
-    def postfix(self):
+        yield self
+        yield from self.descendants(perms)
+
+    def postfix(self, perms=None):
         """
         Return an iterator for this node and its descendants (children, grandchildren, etc.)
         with the parent after the children (postfix).
         """
-        yield from self.descendants()
+        self.check_permission('r', perms)
+
+        yield from self.descendants(perms)
         yield self
 
-    @nestedproperty
-    def data():
-        doc = "data property"
-        def fget(self):
-            return self.__data__
+    def read(self, perms=None):
+        """
+        Return the node's data.
+        """
+        self.check_permission('r', perms)
+        return self.data
 
-        def fset(self, value):
-            self.__data__ = value
-
-        return property(fget, fset, None, doc)
+    def write(self, value, perms=None):
+        """
+        Set the node's data.
+        """
+        self.check_permission('w', perms)
+        self.data = value
 
     def __str__(self):
         return 'key=' + str(self.key)
@@ -226,7 +284,8 @@ class node(object):
     def __repr__(self):
         return 'key=' + repr(self.key) + \
             ', parent=' + repr(self.parent) + \
-            ', children=' + repr(len(self.children)) + \
+            ', children=' + repr(self.children) + \
+            ', perms=' + repr(self.perms) + \
             ', data=' + repr(self.data)
 
 class TestNode(unittest.TestCase):
@@ -376,10 +435,64 @@ class TestNode(unittest.TestCase):
         self.assertEqual(a, n.delete_child(['a']))
         self.assertIsNone(n.delete_child(['a']))
 
+    def test_get_ancestor_perms_none(self):
+        a = node(key='a', perms=None)
+        aa = node(key='aa', parent=a)
+        self.assertIs(a.perms, aa.perms)
+        self.assertIsNone(aa.perms)
 
+    def test_get_ancestor_perms_empty(self):
+        a = node(key='a', perms={})
+        aa = node(key='aa', parent=a)
+        self.assertIs(a.perms, aa.perms)
 
+    def test_get_ancestor_perms_notempty(self):
+        a = node(key='a', perms={'r': True})
+        aa = node(key='aa', parent=a)
+        self.assertIs(a.perms, aa.perms)
 
+    def test_get_ancestor_perms_missing(self):
+        a = node(key='a')
+        aa = node(key='aa', parent=a)
+        self.assertIs(a.perms, aa.perms)
 
+    def test_get_ancestor_perms_parent(self):
+        a = node(key='a', perms={})
+        aa = node(key='aa', parent=a, perms={})
+        aaa = node(key='aaa', parent=aa)
+        self.assertIs(aa.perms, aaa.perms)
+        self.assertIsNot(a.perms, aaa.perms)
+
+    def test_get_ancestor_perms_grandparent(self):
+        a = node(key='a', perms={})
+        aa = node(key='aa', parent=a)
+        aaa = node(key='aaa', parent=aa)
+        self.assertIs(a.perms, aaa.perms)
+        self.assertIs(aa.perms, aaa.perms)
+
+    def test_has_permission_none(self):
+        a = node(key='a', perms=None)
+        self.assertTrue(a.has_permission(op='r', perms=perm()))
+
+    def test_has_permission_no_op(self):
+        a = node(key='a', perms={})
+        self.assertFalse(a.has_permission(op='r', perms=perm()))
+
+    def test_has_permission_fail_empty(self):
+        a = node(key='a', perms={'r': perm(gid='good')})
+        self.assertFalse(a.has_permission(op='r', perms={'r' : perm()}))
+
+    def test_has_permission_fail(self):
+        a = node(key='a', perms={'r': perm(gid='good')})
+        self.assertFalse(a.has_permission(op='r', perms={'r' : perm(gid='bad')}))
+
+    def test_has_permission_success(self):
+        a = node(key='a', perms={'r': perm(gid='good')})
+        self.assertTrue(a.has_permission(op='r', perms={'r' : perm(gid='good')}))
+
+    def test_has_permission_ignore(self):
+        a = node(key='a', perms={'r': perm(gid='good')})
+        self.assertTrue(a.has_permission(op='r', perms=None))
 
 
 
