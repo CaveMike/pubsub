@@ -81,6 +81,9 @@ class node(object):
             another permission to validate.  It returns True if the permission check
             passes, False otherwise.
     """
+    def __create__(key, parent=None):
+        return node(key=key, parent=parent)
+
     def __init__(self, key, parent=None):
         """
         Create a node.  If a parent is specified, link the parent and child nodes.
@@ -114,7 +117,7 @@ class node(object):
 
         # Create new nodes.
         for subkey in subkeys:
-            n = node(subkey, n)
+            n = node.__create__(subkey, n)
 
         # Return the new child.
         return n
