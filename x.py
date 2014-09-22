@@ -80,9 +80,8 @@ class node(object):
           - A permission object that must implement a __call__() function that takes
             another permission to validate.  It returns True if the permission check
             passes, False otherwise.
-          - An owner object that must implement __eq__().
     """
-    def __init__(self, key, parent=None, owner=None):
+    def __init__(self, key, parent=None):
         """
         Create a node.  If a parent is specified, link the parent and child nodes.
         """
@@ -95,7 +94,6 @@ class node(object):
         self.children = {}
 
         self.__data__ = None
-        self.owner = owner
 
     def delete(self):
         """
@@ -219,7 +217,6 @@ class node(object):
 
         return property(fget, fset, None, doc)
 
-
     def __str__(self):
         return 'key=' + str(self.key)
 
@@ -227,8 +224,7 @@ class node(object):
         return 'key=' + repr(self.key) + \
             ', parent=' + repr(self.parent) + \
             ', children=' + repr(len(self.children)) + \
-            ', data=' + repr(self.data) + \
-            ', owner=' + repr(self.owner)
+            ', data=' + repr(self.data)
 
 class TestNode(unittest.TestCase):
     def setUp(self):
@@ -769,7 +765,6 @@ if __name__ == '__main__':
 
     logger.setLevel(level=logging.WARNING)
     unittest.main()
-
 
 """
 hierarchy of nodes (nested subscriptions)
