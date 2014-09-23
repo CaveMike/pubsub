@@ -24,6 +24,12 @@ class key(object):
     def __getitem__(self, index):
         return self.value.__getitem__(index)
 
+    def __str__(self):
+        return key.SEPARATOR.join(self.value)
+
+    def __repr__(self):
+        return self.value.__repr__()
+
 class TestKey(unittest.TestCase):
     def test_init_tuple(self):
         keys = key(('a', 'aa', 'aaa'))
@@ -42,6 +48,14 @@ class TestKey(unittest.TestCase):
 
     def test_init_int(self):
         self.assertRaises(TypeError, key.__init__, 1)
+
+    def test_str(self):
+        k = key(('a', 'aa', 'aaa'))
+        self.assertEqual('a.aa.aaa', str(k))
+
+    def test_repr(self):
+        k = key(('a', 'aa', 'aaa'))
+        self.assertEqual(repr(k.value), repr(k))
 
 class node(object):
     """
