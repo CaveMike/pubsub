@@ -4,6 +4,8 @@ import unittest
 from carbon.helpers import is_sequence_or_set
 
 class Perm(object):
+    TYPES = ('c', 'd', 'r', 'w')
+
     def __init__(self, gid=(), uid=None):
         # Convert gid to a sequence if it is not already.
         if not is_sequence_or_set(gid):
@@ -15,7 +17,10 @@ class Perm(object):
         self.logger = logging.getLogger('Perm')
 
     def to_perms(self):
-        return {'c' : self, 'd' : self, 'r' : self, 'w' : self}
+        perms = {}
+        for t in Perm.TYPES:
+            perms[t] = self
+        return perms
 
     def __call__(self, perm=None):
         self.logger.debug('self=' + str(self) + ', them=' + str(perm))
@@ -111,3 +116,7 @@ class TestPerm(unittest.TestCase):
     def test_repr(self):
         p = Perm(gid='gid0', uid='uid0')
         self.assertIsNotNone(repr(p))
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.WARNING)
+    unittest.main()
